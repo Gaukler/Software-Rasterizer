@@ -53,6 +53,7 @@ cml::vec3 calcBarycentric(const cml::ivec2& v0, const cml::ivec2& v1, const cml:
 	result.x = lineFunction(v1, v2, p);
 	result.y = lineFunction(v2, v0, p);
 	float d = lineFunction(v0, v1, v2);
+	if (abs(d) == 0.f) d = 1.f;
 	cml::vec3 test = result / d;
 	return test;
 }
