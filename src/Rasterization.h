@@ -3,12 +3,13 @@
 #include "RenderTarget.h"
 #include "Mesh.h"
 #include "Shading.h"
+#include "VertexShader.h"
 
 enum class RasterizationType { Point, Line, Fill };
 struct RenderSettings {
 	RasterizationType rasterType;
 	cml::vec3(*shadingFunction)(const Triangle& t, const cml::vec3& b, const ShaderInput& input);
-	Vertex(*vertexFunctions)(const Vertex& v, const ShaderInput& input);
+	VertexFunctions::VertexShaderResult(*vertexFunctions)(const Vertex& v, const ShaderInput& input);
 	ShaderInput shaderInput;
 };
 

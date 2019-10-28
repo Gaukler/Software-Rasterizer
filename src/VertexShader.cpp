@@ -2,19 +2,23 @@
 #include "VertexShader.h"
 
 namespace VertexFunctions {
-	Vertex passTrough(const Vertex& vIn, const ShaderInput& input) {
-		return vIn;
+	VertexShaderResult passTrough(const Vertex& vIn, const ShaderInput& input) {
+		VertexShaderResult result;
+		result.positionW = 1.f;
+		result.vertex = vIn;
+		return result;
 	}
 
-	Vertex viewProjection(const Vertex& vIn, const ShaderInput& input) {
-		Vertex v = vIn;
-		cml::vec4 viewPos = cml::matrixMult(cml::vec4(v.position, 1.f), input.viewMatrix);
+	VertexShaderResult viewProjection(const Vertex& vIn, const ShaderInput& input) {
+		VertexShaderResult result;
+		result.vertex = vIn;
+		cml::vec4 viewPos = cml::matrixMult(cml::vec4(result.vertex.position, 1.f), input.viewMatrix);
 		cml::vec4 pos = cml::matrixMult(viewPos, input.projectionMatrix);
-		v.position.x = pos.x;
-		v.position.y = pos.y;
-		v.position.z = pos.z;
-		v.position = v.position / pos.w;
+		result.vertex.position.x = pos.x;
+		result.vertex.position.y = pos.y;
+		result.vertex.position.z = pos.z;
+		result.positionW = pos.w;
 
-		return v;
+		return result;
 	}
 }
