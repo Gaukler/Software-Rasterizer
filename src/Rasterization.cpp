@@ -71,6 +71,14 @@ bool isBarycentricInvalidLine(cml::vec3 b) {
 	return !((abs(b.x) < delta) || (abs(b.y) < delta) || (abs(b.z) < delta));
 }
 
+Vertex interpolateVertexData(const Triangle& t, const cml::vec3 b) {
+	Vertex res;
+	res.position = t.v1.position * b.x + t.v2.position * b.y + t.v3.position * b.z;
+	res.normal = t.v1.normal * b.x + t.v2.normal * b.y + t.v3.normal * b.z;
+	res.uv = t.v1.uv * b.x + t.v2.uv * b.y + t.v3.uv * b.z;
+	return res;
+}
+
 //this is not efficient, but simple and allows for variable line thickness
 void rasterizeLines(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
 	for (int iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
@@ -89,9 +97,9 @@ void rasterizeLines(const std::vector<Triangle>& triangles, RenderTarget& target
 				if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z) || isBarycentricInvalidLine(b)) {
 					continue;
 				}
-				cml::vec3 position = t.v1.position * b.x + t.v2.position * b.y + t.v3.position * b.z;
-				int depth = -position.z * INT_MAX;
-				target.writeDepthTest(x, y, settings.shadingFunction(t, b, settings.shaderInput), depth);
+				Vertex v = interpolateVertexData(t, b);
+				int depth = -v.position.z * INT_MAX;
+				target.writeDepthTest(x, y, settings.shadingFunction(v, settings.shaderInput), depth);
 			}
 		}
 	}
@@ -184,15 +192,15 @@ void rasterizePoints(const std::vector<Triangle>& triangles, RenderTarget& targe
 
 		cml::ivec2 position = coordinateNDCtoRaster(triangles[i].v1.position, target.getWidth(), target.getHeight());
 		int depth = -triangles[i].v1.position.z * INT_MAX;
-		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i], cml::vec3(1.f, 0.f, 0.f), settings.shaderInput), depth);
+		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i].v1, settings.shaderInput), depth);
 
 		position = coordinateNDCtoRaster(triangles[i].v2.position, target.getWidth(), target.getHeight());
 		depth = -triangles[i].v2.position.z * INT_MAX;
-		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i], cml::vec3(0.f, 1.f, 0.f), settings.shaderInput), depth);
+		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i].v2, settings.shaderInput), depth);
 
 		position = coordinateNDCtoRaster(triangles[i].v3.position, target.getWidth(), target.getHeight());
 		depth = -triangles[i].v3.position.z * INT_MAX;
-		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i], cml::vec3(0.f, 0.f, 1.f), settings.shaderInput), depth);
+		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i].v3, settings.shaderInput), depth);
 	}
 }
 
@@ -213,9 +221,9 @@ void rasterizeFill(const std::vector<Triangle>& triangles, RenderTarget& target,
 				if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z)) {
 					continue;
 				}
-				cml::vec3 position = t.v1.position * b.x + t.v2.position * b.y + t.v3.position * b.z;
-				int depth = -position.z * INT_MAX;
-				target.writeDepthTest(x, y, settings.shadingFunction(t, b, settings.shaderInput), depth);
+				Vertex v = interpolateVertexData(t, b);
+				int depth = -v.position.z * INT_MAX;
+				target.writeDepthTest(x, y, settings.shadingFunction(v, settings.shaderInput), depth);
 			}
 		}
 	}
