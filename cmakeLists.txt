@@ -1,0 +1,42 @@
+cmake_minimum_required (VERSION 3.16)
+project (SoftwareRasterizer)
+
+include_directories(src)
+add_executable(SoftwareRasterizer 
+src/main.cpp 
+src/Image.cpp 
+src/objLoader.cpp 
+src/Rasterization.cpp 
+src/RenderTarget.cpp 
+src/Shading.cpp 
+src/TGATools.cpp 
+src/VertexShader.cpp
+src/CML/Common.cpp
+src/CML/Matrix.cpp
+src/CML/MatrixTransforms.cpp
+src/CML/Vector.cpp
+
+src/Image.h 
+src/objLoader.h 
+src/pch.h 
+src/Rasterization.h 
+src/RenderTarget.h 
+src/Shading.h 
+src/ShaderInput.h 
+src/TGATools.h 
+src/VertexShader.h
+src/CML/Common.h
+src/CML/Matrix.h
+src/CML/MatrixTransforms.h
+src/CML/Vector.h
+)
+
+target_precompile_headers(SoftwareRasterizer
+  PUBLIC
+    src/pch.h
+)
+
+#enable multicore compilation in VS
+if(MSVC)
+ target_compile_options(SoftwareRasterizer PRIVATE "/MP")
+endif()
