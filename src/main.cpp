@@ -8,17 +8,24 @@
 #include "Shading.h"
 #include "VertexShader.h"
 #include "CML/MatrixTransforms.h"
+#include "DirectoryUtils.h"
 
 int main() {
 	int width = 1920;
 	int height = 1080;
 	RenderTarget renderTarget(width, height);
 
-	std::string modelName = "C:/Users/Nutzer/Desktop/african_head.obj";
-	Mesh* mesh = objLoader::loadOBJ(modelName);
+	std::filesystem::path resourcePath = DirectoryUtils::searchResourceDirectory();
 
-	TGATools::TGAImage* textureTGA = TGATools::loadTGAFile("C:/Users/Nutzer/Desktop/african_head_diffuse.tga");
-	RGBImage* texture = TGATools::TGAtoRGBimage(textureTGA);
+	std::string modelName = "african_head.obj";
+	std::filesystem::path modelPath = resourcePath / modelName;
+	Mesh* mesh = objLoader::loadOBJ(modelPath.string());
+
+	std::string textureName = "african_head_diffuse.tga";
+	std::filesystem::path texturePath = resourcePath / textureName;
+	TGATools::TGAImage* textureSource = TGATools::loadTGAFile(texturePath.string());
+	RGBImage* texture = TGATools::TGAtoRGBimage(textureSource);
+
 	ShaderInput shaderInput;
 	shaderInput.texture = texture;
 	float fovY = 40.f;
@@ -36,8 +43,9 @@ int main() {
 	drawTriangles(mesh->triangles, renderTarget, settings);
 
 	TGATools::TGAImage* tgaImage = TGATools::RGBtoTGAImage(renderTarget.getImage());
-	std::string filename = "C:/Users/Nutzer/Desktop/testImage.tga";
-	TGATools::writeTGAImage(tgaImage, filename);
+	std::string resultFileName = "render.tga";
+	std::filesystem::path resultPath = resourcePath / resultFileName;
+	TGATools::writeTGAImage(tgaImage, resultPath.string());
 
 	return 0;
 }
