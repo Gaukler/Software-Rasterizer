@@ -1,4 +1,4 @@
-#include "../pch.h"
+#include "pch.h"
 #include "Vector.h"
 
 namespace cml {
@@ -207,7 +207,6 @@ namespace cml {
 		result.x = x - scalar;
 		result.y = y - scalar;
 		return result;
-		return *this;
 	}
 
 	vec2 vec2::operator +(const vec2& other) const {
@@ -222,6 +221,10 @@ namespace cml {
 		result.x = x - other.x;
 		result.y = y - other.y;
 		return result;
+	}
+
+	vec2::operator ivec2() const {
+		return ivec2((int)x, (int)y);
 	}
 
 	// ---------- ivec2 -----------------
@@ -268,7 +271,6 @@ namespace cml {
 		result.x = x - scalar;
 		result.y = y - scalar;
 		return result;
-		return *this;
 	}
 
 	ivec2 ivec2::operator +(const ivec2& other) const {
@@ -283,5 +285,9 @@ namespace cml {
 		result.x = x - other.x;
 		result.y = y - other.y;
 		return result;
+	}
+
+	ivec2::operator vec2() const {
+		return vec2((float)x, (float)y);
 	}
 }

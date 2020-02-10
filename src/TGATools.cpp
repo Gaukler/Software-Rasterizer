@@ -26,9 +26,9 @@ namespace TGATools {
 			std::cout << "ID field not supported " << path << std::endl;
 		}
 		image->bytePerPixel = (short)image->header.bitPerPixel>>3;
-		unsigned long dataSize = image->header.width * image->header.height * image->bytePerPixel;
+		size_t dataSize = (size_t)image->header.width * (size_t)image->header.height * (size_t)image->bytePerPixel;
 		image->data = new char[dataSize];
-		file.read(image->data, dataSize);
+		file.read(image->data, (std::streamsize)dataSize);
 		return image;
 	}
 
@@ -40,7 +40,7 @@ namespace TGATools {
 	}
 
 	RGBImage* TGAtoRGBimage(TGAImage* tga) {
-		RGBImage* rgb = new RGBImage(tga->header.width, tga->header.height);
+		RGBImage* rgb = new RGBImage((size_t)tga->header.width, (size_t)tga->header.height);
 		if (tga->bytePerPixel != 3) {
 			std::cout << "Conversion only supports RGB" << std::endl;
 			return nullptr;
@@ -50,7 +50,7 @@ namespace TGATools {
 				float blue   = correctLoad(tga->data[(y + x * tga->header.width) * tga->bytePerPixel]);
 				float green  = correctLoad(tga->data[(y + x * tga->header.width) * tga->bytePerPixel + 1]);
 				float red    = correctLoad(tga->data[(y + x * tga->header.width) * tga->bytePerPixel + 2]);
-				(*rgb)[x][y] = cml::vec3(red, green, blue) / 255.f;
+				(*rgb)[(size_t)x][(size_t)y] = cml::vec3(red, green, blue) / 255.f;
 			}
 		}
 		return rgb;
@@ -68,14 +68,14 @@ namespace TGATools {
 		}
 		tga->header.xOrigin = 0;
 		tga->header.yOrigin = 0;
-		tga->header.width = rgb->getWidth();
-		tga->header.height = rgb->getHeight();
+		tga->header.width  = (short)rgb->getWidth();
+		tga->header.height = (short)rgb->getHeight();
 		tga->header.bitPerPixel = 24;
 		tga->header.imageDescriptorFlags = 0;
 
-		tga->data = new char[tga->header.width * tga->header.height * tga->bytePerPixel];
-		for (int y = 0; y < tga->header.height; y++) {
-			for (int x = 0; x < tga->header.width; x++) {
+		tga->data = new char[(size_t)tga->header.width * (size_t)tga->header.height * (size_t)tga->bytePerPixel];
+		for (size_t y = 0; (short)y < tga->header.height; y++) {
+			for (size_t x = 0; (short)x < tga->header.width; x++) {
 				cml::vec3 pixel = (*rgb)[y][x];
 				pixel.x = std::max(std::min(pixel.x, 1.f), 0.f);
 				pixel.y = std::max(std::min(pixel.y, 1.f), 0.f);
@@ -97,6 +97,6 @@ namespace TGATools {
 	void writeTGAImage(TGAImage* tga, const std::string& filename) {
 		std::ofstream file(filename, std::ios::binary);
 		file.write((char*)&tga->header, sizeof(tga->header));
-		file.write(tga->data, tga->header.width * tga->header.height * tga->bytePerPixel);
+		file.write(tga->data, (std::streamsize)tga->header.width * (std::streamsize)tga->header.height * (std::streamsize)tga->bytePerPixel);
 	}
 }

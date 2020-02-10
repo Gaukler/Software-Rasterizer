@@ -1,4 +1,4 @@
-#include "../pch.h"
+#include "pch.h"
 #include "Common.h"
 
 namespace cml {
@@ -11,6 +11,6 @@ namespace cml {
 	}
 
 	float radian(const float& degree) {
-		return degree / 180.f * 3.1415;
+		return degree / 180.f * 3.1415f;
 	}
 }

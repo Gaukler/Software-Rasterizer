@@ -5,7 +5,7 @@ void drawTriangles(const std::vector<Triangle>& triangleList, RenderTarget& targ
 
 	std::vector<Triangle> transformedTriangles;
 	transformedTriangles.reserve(triangleList.size());
-	for (int iTriangle = 0; iTriangle < triangleList.size(); iTriangle++) {
+	for (size_t iTriangle = 0; iTriangle < triangleList.size(); iTriangle++) {
 		Triangle t;
 		VertexFunctions::VertexShaderResult vResult;
 		vResult = settings.vertexFunctions(triangleList[iTriangle].v1, settings.shaderInput);
@@ -43,24 +43,24 @@ void swapPoints(cml::ivec2& i1, cml::ivec2& i2) {
 	i2 = temp;
 }
 
-float lineFunction(const cml::ivec2& v0, const cml::ivec2& v1, const cml::ivec2& p) {
+int lineFunction(const cml::ivec2& v0, const cml::ivec2& v1, const cml::ivec2& p) {
 	return (p.x - v0.x) * (v1.y - v0.y) - (p.y - v0.y) * (v1.x - v0.x);
 }
 
 cml::vec3 calcBarycentric(const cml::ivec2& v0, const cml::ivec2& v1, const cml::ivec2& v2, const cml::ivec2& p) {
 	cml::vec3 result;
-	result.z = lineFunction(v0, v1, p);
-	result.x = lineFunction(v1, v2, p);
-	result.y = lineFunction(v2, v0, p);
-	float d = lineFunction(v0, v1, v2);
+	result.z = (float)lineFunction(v0, v1, p);
+	result.x = (float)lineFunction(v1, v2, p);
+	result.y = (float)lineFunction(v2, v0, p);
+	float d  = (float)lineFunction(v0, v1, v2);
 	if (abs(d) == 0.f) d = 1.f;
 	cml::vec3 test = result / d;
 	return test;
 }
 
-cml::ivec2 coordinateNDCtoRaster(cml::vec3 p, const int& width, const int& height) {
+cml::ivec2 coordinateNDCtoRaster(cml::vec3 p, const uint32_t& width, const uint32_t& height) {
 	p = p * 0.5f + 0.5f;
-	return cml::ivec2(std::round(p.x * (width - 1)), std::round(p.y * (height - 1)));
+	return cml::ivec2((int)std::round(p.x * (width - 1)), (int)std::round(p.y * (height - 1)));
 }
 
 bool isBarycentricInvalid(float value) {
@@ -82,12 +82,12 @@ Vertex interpolateVertexData(const Triangle& t, const cml::vec3 b) {
 
 //this is not efficient, but simple and allows for variable line thickness
 void rasterizeLines(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
-	for (int iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
+	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
 		Triangle t = triangles[iTriangle];
 
-		const cml::ivec2 p1 = coordinateNDCtoRaster(t.v1.position, target.getWidth(), target.getHeight());
-		const cml::ivec2 p2 = coordinateNDCtoRaster(t.v2.position, target.getWidth(), target.getHeight());
-		const cml::ivec2 p3 = coordinateNDCtoRaster(t.v3.position, target.getWidth(), target.getHeight());
+		const cml::ivec2 p1 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		const cml::ivec2 p2 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		const cml::ivec2 p3 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
 
 		cml::ivec2 bb_min = cml::ivec2(std::min(std::min(p1.x, p2.x), p3.x), std::min(std::min(p1.y, p2.y), p3.y));
 		cml::ivec2 bb_max = cml::ivec2(std::max(std::max(p1.x, p2.x), p3.x), std::max(std::max(p1.y, p2.y), p3.y));
@@ -99,8 +99,8 @@ void rasterizeLines(const std::vector<Triangle>& triangles, RenderTarget& target
 					continue;
 				}
 				Vertex v = interpolateVertexData(t, b);
-				int depth = -v.position.z * INT_MAX;
-				target.writeDepthTest(x, y, settings.shadingFunction(v, settings.shaderInput), depth);
+				int depth = (int)-v.position.z * INT_MAX;
+				target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
 			}
 		}
 	}
@@ -130,7 +130,7 @@ std::vector<Vertex> clipLineAgainsAxisAlignedLine(const std::vector<Vertex>& ver
 		isOutside = &isOutsideLowerLimit;
 	}
 
-	for (int pointI = 0; pointI < vertices.size(); pointI++) {
+	for (size_t pointI = 0; pointI < vertices.size(); pointI++) {
 		Vertex v1 = vertices[pointI];
 		Vertex v2 = vertices[(pointI + 1) % vertices.size()];
 
@@ -159,7 +159,7 @@ std::vector<Vertex> clipLineAgainsAxisAlignedLine(const std::vector<Vertex>& ver
 
 std::vector<Triangle> clipTriangles(std::vector<Triangle> in) {
 	std::vector<Triangle> result;
-	for (int triangleI = 0; triangleI < in.size(); triangleI++) {
+	for (size_t triangleI = 0; triangleI < in.size(); triangleI++) {
 		std::vector<Vertex> points = { in[triangleI].v1, in[triangleI].v2, in[triangleI].v3 };
 		std::vector<Vertex> pointsClipped;
 		
@@ -174,7 +174,7 @@ std::vector<Triangle> clipTriangles(std::vector<Triangle> in) {
 		//triangle fan
 		if (pointsClipped.size() >= 3) {
 			Vertex v1 = pointsClipped[0];
-			for (int secondPointIndex = 1; secondPointIndex < pointsClipped.size() - 1; secondPointIndex++) {
+			for (size_t secondPointIndex = 1; secondPointIndex < pointsClipped.size() - 1; secondPointIndex++) {
 				Vertex v2 = pointsClipped[secondPointIndex];
 				Vertex v3 = pointsClipped[secondPointIndex + 1];
 				Triangle t;
@@ -189,42 +189,42 @@ std::vector<Triangle> clipTriangles(std::vector<Triangle> in) {
 }
 
 void rasterizePoints(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
-	for (int i = 0; i < triangles.size(); i++) {
+	for (size_t i = 0; i < triangles.size(); i++) {
 
-		cml::ivec2 position = coordinateNDCtoRaster(triangles[i].v1.position, target.getWidth(), target.getHeight());
-		int depth = -triangles[i].v1.position.z * INT_MAX;
-		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i].v1, settings.shaderInput), depth);
+		cml::ivec2 position = coordinateNDCtoRaster(triangles[i].v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		int depth = (int)(-triangles[i].v1.position.z * INT_MAX);
+		target.writeDepthTest((size_t)position.x, (size_t)position.y, settings.shadingFunction(triangles[i].v1, settings.shaderInput), depth);
 
-		position = coordinateNDCtoRaster(triangles[i].v2.position, target.getWidth(), target.getHeight());
-		depth = -triangles[i].v2.position.z * INT_MAX;
-		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i].v2, settings.shaderInput), depth);
+		position = coordinateNDCtoRaster(triangles[i].v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		depth = (int)(-triangles[i].v2.position.z * INT_MAX);
+		target.writeDepthTest((size_t)position.x, (size_t)position.y, settings.shadingFunction(triangles[i].v2, settings.shaderInput), depth);
 
-		position = coordinateNDCtoRaster(triangles[i].v3.position, target.getWidth(), target.getHeight());
-		depth = -triangles[i].v3.position.z * INT_MAX;
-		target.writeDepthTest(position.x, position.y, settings.shadingFunction(triangles[i].v3, settings.shaderInput), depth);
+		position = coordinateNDCtoRaster(triangles[i].v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		depth = (int)(-triangles[i].v3.position.z * INT_MAX);
+		target.writeDepthTest((size_t)position.x, (size_t)position.y, settings.shadingFunction(triangles[i].v3, settings.shaderInput), depth);
 	}
 }
 
 void rasterizeFill(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
-	for (int iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
+	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
 		const Triangle t = triangles[iTriangle];
 
-		const cml::ivec2 p1 = coordinateNDCtoRaster(t.v1.position, target.getWidth(), target.getHeight());
-		const cml::ivec2 p2 = coordinateNDCtoRaster(t.v2.position, target.getWidth(), target.getHeight());
-		const cml::ivec2 p3 = coordinateNDCtoRaster(t.v3.position, target.getWidth(), target.getHeight());
+		const cml::ivec2 p1 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		const cml::ivec2 p2 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		const cml::ivec2 p3 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
 
 		cml::ivec2 bb_min = cml::ivec2(std::min(std::min(p1.x, p2.x), p3.x), std::min(std::min(p1.y, p2.y), p3.y));
 		cml::ivec2 bb_max = cml::ivec2(std::max(std::max(p1.x, p2.x), p3.x), std::max(std::max(p1.y, p2.y), p3.y));
 
 		for (int x = bb_min.x; x < bb_max.x; x++) {
 			for (int y = bb_min.y; y < bb_max.y; y++) {
-				cml::vec3 b = calcBarycentric(p1, p2, p3, cml::ivec2(x, y));
+				cml::vec3 b = calcBarycentric(p1, p2, p3, cml::ivec2((int)x, (int)y));
 				if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z)) {
 					continue;
 				}
 				Vertex v = interpolateVertexData(t, b);
-				int depth = -v.position.z * INT_MAX;
-				target.writeDepthTest(x, y, settings.shadingFunction(v, settings.shaderInput), depth);
+				int depth = (int)(-v.position.z * INT_MAX);
+				target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
 			}
 		}
 	}

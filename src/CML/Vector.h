@@ -1,7 +1,10 @@
 #pragma once
-#include "../pch.h"
+#include "pch.h"
 
 namespace cml {
+
+	//forward declare for casting operator
+	struct ivec2;
 
 	struct vec2 {
 		vec2();
@@ -16,6 +19,8 @@ namespace cml {
 		vec2 operator -(const float& scalar) const;
 		vec2 operator +(const vec2& other) const;
 		vec2 operator -(const vec2& other) const;
+
+		explicit operator ivec2() const;
 	};
 
 	struct vec3 {
@@ -65,6 +70,8 @@ namespace cml {
 		ivec2 operator -(const int& scalar) const;
 		ivec2 operator +(const ivec2& other) const;
 		ivec2 operator -(const ivec2& other) const;
+
+		explicit operator vec2() const;
 	};
 
 	vec3 normalize(const vec3& v);

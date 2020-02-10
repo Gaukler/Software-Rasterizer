@@ -3,48 +3,48 @@
 #include "CML/Vector.h"
 
 struct RGBImageRow {
-	RGBImageRow(int length);
+	RGBImageRow(size_t length);
 	~RGBImageRow();
-	cml::vec3& operator [](int index);
+	cml::vec3& operator [](size_t index);
 private:
 	cml::vec3* m_data;
 };
 
 class RGBImage {
 public:
-	RGBImage(int width, int height);
-	int getWidth();
-	int getHeight();
+	RGBImage(size_t width, size_t height);
+	size_t getWidth();
+	size_t getHeight();
 	void clear(const cml::vec3& color = cml::vec3(0.f));
 	cml::vec3 sample(const cml::vec2& uv);
 
-	RGBImageRow& operator [](int index);
+	RGBImageRow& operator [](size_t index);
 	~RGBImage();
 private:
-	int m_width;
-	int m_height;
+	size_t m_width;
+	size_t m_height;
 	RGBImageRow* m_data;
 };
 
 struct IntImageRow {
-	IntImageRow(int length);
+	IntImageRow(size_t length);
 	~IntImageRow();
-	int& operator [](int index);
+	int& operator [](size_t index);
 private:
 	int* m_data;
 };
 
 class IntImage {
 public:
-	IntImage(int width, int height);
-	int getWidth();
-	int getHeight();
+	IntImage(size_t width, size_t height);
+	size_t getWidth();
+	size_t getHeight();
 	void clear(const int& value = INT_MAX);
 
-	IntImageRow& operator [](int index);
+	IntImageRow& operator [](size_t index);
 	~IntImage();
 private:
-	int m_width;
-	int m_height;
+	size_t m_width;
+	size_t m_height;
 	IntImageRow* m_data;
 };

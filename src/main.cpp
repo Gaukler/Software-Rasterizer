@@ -11,8 +11,8 @@
 #include "DirectoryUtils.h"
 
 int main() {
-	int width = 1920;
-	int height = 1080;
+	uint32_t width = 1920;
+	uint32_t height = 1080;
 	RenderTarget renderTarget(width, height);
 
 	std::filesystem::path resourcePath = DirectoryUtils::searchResourceDirectory();

@@ -2,7 +2,7 @@
 #include "pch.h"
 #include "RenderTarget.h"
 
-RenderTarget::RenderTarget(const int width, const int height) {
+RenderTarget::RenderTarget(const size_t width, const size_t height) {
 	m_image = new RGBImage(width, height);
 	m_image->clear();
 
@@ -14,13 +14,13 @@ RenderTarget::~RenderTarget() {
 	delete m_image;
 }
 
-cml::vec3 RenderTarget::read(const int x, const int y) {
+cml::vec3 RenderTarget::read(const size_t x, const size_t y) {
 	return (*m_image)[y][x];
 }
-void RenderTarget::write(const int x, const int y, const cml::vec3& value) {
+void RenderTarget::write(const size_t x, const size_t y, const cml::vec3& value) {
 	(*m_image)[y][x] = value;
 }
-void RenderTarget::writeDepthTest(const int x, const int y, const cml::vec3& value, const int& depth) {
+void RenderTarget::writeDepthTest(const size_t x, const size_t y, const cml::vec3& value, const int& depth) {
 	if (depth < (*m_depthBuffer)[y][x]){
 		return;
 	}
@@ -28,11 +28,11 @@ void RenderTarget::writeDepthTest(const int x, const int y, const cml::vec3& val
 	(*m_depthBuffer)[y][x] = depth;
 }
 
-int RenderTarget::getWidth() {
+size_t RenderTarget::getWidth() {
 	return m_image->getWidth();
 }
 
-int RenderTarget::getHeight() {
+size_t RenderTarget::getHeight() {
 	return m_image->getHeight();
 }
 

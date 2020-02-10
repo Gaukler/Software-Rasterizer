@@ -55,20 +55,20 @@ namespace objLoader {
 				size_t end = 1;
 				size_t start = line.find_first_not_of(" ", end);
 				TriangleIndices triangleIndices;
-				for (int i = 0; i < 3; i++) {
+				for (size_t i = 0; i < 3; i++) {
 					end = std::min(line.find_first_of(" ", start + 1), line.find_first_of("/", start + 1));
 					std::string indexString = line.substr(start, end - start);
-					triangleIndices.positionIndices[i] = (std::stoi(indexString) - 1);
+					triangleIndices.positionIndices[i] = (size_t)(std::stoi(indexString)) - 1;
 					start = end + 1;
 
 					end = std::min(line.find_first_of(" ", start + 1), line.find_first_of("/", start + 1));
 					indexString = line.substr(start, end - start);
-					triangleIndices.uvIndices[i] = (std::stoi(indexString) - 1);
+					triangleIndices.uvIndices[i] = (size_t)(std::stoi(indexString)) - 1;
 					start = end + 1;
 
 					end = std::min(line.find_first_of(" ", start + 1), line.find_first_of("/", start + 1));
 					indexString = line.substr(start, end - start);
-					triangleIndices.normalIndices[i] = (std::stoi(indexString) - 1);
+					triangleIndices.normalIndices[i] = (size_t)(std::stoi(indexString)) - 1;
 					start = end + 1;
 				}
 				triangleIndexList.push_back(triangleIndices);
@@ -76,7 +76,7 @@ namespace objLoader {
 		}
 
 		Mesh* mesh = new Mesh;
-		for (int i = 0; i < triangleIndexList.size(); i++) {
+		for (size_t i = 0; i < triangleIndexList.size(); i++) {
 			TriangleIndices indices = triangleIndexList[i];
 			Triangle t;
 

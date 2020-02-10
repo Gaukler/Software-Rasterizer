@@ -2,12 +2,23 @@
 #include "VertexShader.h"
 
 namespace VertexFunctions {
+
+	//disable warning for unused parameter "input"
+	#ifdef _MSC_VER
+	#pragma warning(disable: 4100)
+	#endif
+
 	VertexShaderResult passTrough(const Vertex& vIn, const ShaderInput& input) {
 		VertexShaderResult result;
 		result.positionW = 1.f;
 		result.vertex = vIn;
 		return result;
 	}
+
+	//reenable warning
+	#ifdef _MSC_VER
+	#pragma warning(default: 4100)
+	#endif
 
 	VertexShaderResult viewProjection(const Vertex& vIn, const ShaderInput& input) {
 		VertexShaderResult result;

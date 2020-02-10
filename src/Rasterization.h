@@ -6,11 +6,14 @@
 #include "VertexShader.h"
 
 enum class RasterizationType { Point, Line, Fill };
+
 struct RenderSettings {
-	RasterizationType rasterType;
 	cml::vec3(*shadingFunction)(const Vertex& t, const ShaderInput& input);
 	VertexFunctions::VertexShaderResult(*vertexFunctions)(const Vertex& v, const ShaderInput& input);
 	ShaderInput shaderInput;
+	RasterizationType rasterType;
+private:
+	float padding = 0.f;
 };
 
 std::vector<Triangle> clipTriangles(std::vector<Triangle> in);

@@ -8,4 +8,6 @@ struct ShaderInput {
 	cml::vec3 lightPosition;
 	mutable cml::mat4x4 projectionMatrix;
 	mutable cml::mat4x4 viewMatrix;
+private:
+	float padding = 0.f;
 };

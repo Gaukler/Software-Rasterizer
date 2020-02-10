@@ -30,10 +30,13 @@ namespace TGATools {
 	};
 
 	struct TGAImage {
-		short bytePerPixel;
-		TGAheader header;
-		char* data;
 		~TGAImage();
+		TGAheader header;
+		short bytePerPixel;
+	private:
+		float padding = 0.f;
+	public:
+		char* data;
 	};
 
 	TGAImage* loadTGAFile(const std::string& path);

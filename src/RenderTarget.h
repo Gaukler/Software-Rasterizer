@@ -5,15 +5,15 @@
 
 class RenderTarget {
 public:
-	RenderTarget(const int width, const int height);
+	RenderTarget(const size_t width, const size_t height);
 	~RenderTarget();
-	cml::vec3 read(const int x, const int y);
-	void write(const int x, const int y, const cml::vec3& value);
-	void writeDepthTest(const int x, const int y, const cml::vec3& value, const int& depth);
+	cml::vec3 read(const size_t x, const size_t y);
+	void write(const size_t x, const size_t y, const cml::vec3& value);
+	void writeDepthTest(const size_t x, const size_t y, const cml::vec3& value, const int& depth);
 	RGBImage* getImage();
 
-	int getWidth();
-	int getHeight();
+	size_t getWidth();
+	size_t getHeight();
 private:
 	RGBImage* m_image;
 	IntImage* m_depthBuffer;

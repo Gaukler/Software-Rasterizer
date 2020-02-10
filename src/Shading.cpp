@@ -3,6 +3,11 @@
 
 namespace ShadingFunctions {
 
+	//disable warning for unused parameter "input"
+	#ifdef _MSC_VER
+	#pragma warning(disable: 4100)
+	#endif
+
 	cml::vec3 normalVis(const Vertex& v, const ShaderInput& input) {
 		return cml::normalize(v.normal);
 	}
@@ -31,4 +36,9 @@ namespace ShadingFunctions {
 		cml::vec3 light = cml::normalize(input.lightPosition);
 		return input.texture->sample(v.uv) * (std::max(cml::dot(light, cml::normalize(v.normal)), 0.f) + 0.2f);
 	}
+
+	//reenable warning
+	#ifdef _MSC_VER
+	#pragma warning(default: 4100)
+	#endif
 }
