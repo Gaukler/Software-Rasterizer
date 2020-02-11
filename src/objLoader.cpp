@@ -11,7 +11,7 @@ namespace objLoader {
 
 	Mesh* loadOBJ(const std::string& path) {
 		std::ifstream file(path, std::ios::binary);
-		assert(file.is_open(), "file not found");
+		assert(file.is_open());
 
 		std::string line;
 		std::vector<cml::vec3> positionList;

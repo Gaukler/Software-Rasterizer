@@ -14,7 +14,7 @@ namespace TGATools {
 
 		TGAheader header;
 		file.read((char*)&header, sizeof(header));
-		assert(image->header.imageType == TGAimageTypes::uncompressedRGB); //no other type supported
+		assert(header.imageType == TGAimageTypes::uncompressedRGB); //no other type supported
 
 		const short bytePerPixel = (short)header.bitPerPixel >> 3;
 		if (header.idLength != 0) std::cout << "ID field not supported, will be ignored " << path << std::endl;

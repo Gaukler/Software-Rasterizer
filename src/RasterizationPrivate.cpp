@@ -178,7 +178,7 @@ bool isBarycentricInvalid(const float value) {
 
 cml::ivec2 coordinateNDCtoRaster(const cml::vec3& p, const uint32_t& width, const uint32_t& height) {
 	const cml::vec3 pZeroToOne = p * 0.5f + 0.5f;
-	return cml::ivec2((int)std::round(p.x * (width - 1)), (int)std::round(p.y * (height - 1)));
+	return cml::ivec2((int)std::round(pZeroToOne.x * (width - 1)), (int)std::round(pZeroToOne.y * (height - 1)));
 }
 
 Vertex interpolateVertexData(const Triangle& t, const cml::vec3 b) {

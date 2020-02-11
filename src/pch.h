@@ -23,4 +23,5 @@
 #ifdef _MSC_VER
 #pragma warning(pop)
 #pragma warning(disable: 5045) //specter mitigation warning
+#pragma warning(disable: 4514) //compiler removing inline functions
 #endif
