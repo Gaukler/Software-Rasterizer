@@ -3,7 +3,8 @@
 #include "CML/Vector.h"
 #include "CML/Common.h"
 #include "RenderTarget.h"
-#include "Rasterization.h"
+#include "RasterizationPublic.h"
+#include "RenderSettings.h"
 #include "objLoader.h"
 #include "Shading.h"
 #include "VertexShader.h"
@@ -11,40 +12,34 @@
 #include "DirectoryUtils.h"
 
 int main() {
-	uint32_t width = 1920;
-	uint32_t height = 1080;
+	const uint32_t width = 1920;
+	const uint32_t height = 1080;
 	RenderTarget renderTarget(width, height);
 
-	std::filesystem::path resourcePath = DirectoryUtils::searchResourceDirectory();
+	const std::filesystem::path resourcePath = DirectoryUtils::searchResourceDirectory();
 
-	std::string modelName = "african_head.obj";
-	std::filesystem::path modelPath = resourcePath / modelName;
-	Mesh* mesh = objLoader::loadOBJ(modelPath.string());
+	const std::string modelName = "african_head.obj";
+	const std::filesystem::path modelPath = resourcePath / modelName;
+	const Mesh* mesh = objLoader::loadOBJ(modelPath.string());
 
-	std::string textureName = "african_head_diffuse.tga";
-	std::filesystem::path texturePath = resourcePath / textureName;
+	const std::string textureName = "african_head_diffuse.tga";
+	const std::filesystem::path texturePath = resourcePath / textureName;
 	TGATools::TGAImage* textureSource = TGATools::loadTGAFile(texturePath.string());
 	RGBImage* texture = TGATools::TGAtoRGBimage(textureSource);
 
-	ShaderInput shaderInput;
-	shaderInput.texture = texture;
-	float fovY = 40.f;
-	float aspectRatio = (float)width / height;
-	shaderInput.projectionMatrix = cml::projectionMatrix(1.f, 20.f, cml::radian(fovY), aspectRatio);
-	shaderInput.viewMatrix = cml::viewMatrixLookAt(cml::vec3(1.f, 1.f, 3.f), cml::vec3(0.f));
+	const cml::vec3 lightPosition = cml::vec3(1.f, 1.f, 1.f);
+	const float fovY = 40.f;
+	const float aspectRatio = (float)width / (float)height;
+	const cml::mat4x4 projectionMatrix = cml::projectionMatrix(1.f, 20.f, cml::radian(fovY), aspectRatio);
+	const cml::mat4x4 viewMatrix = cml::viewMatrixLookAt(cml::vec3(1.f, 1.f, 3.f), cml::vec3(0.f));
 
-	shaderInput.lightPosition = cml::vec3(1.f, 1.f, 1.f);
-
-	RenderSettings settings;
-	settings.rasterType = RasterizationType::Fill;
-	settings.vertexFunctions = VertexFunctions::viewProjection;
-	settings.shadingFunction = ShadingFunctions::texturedLit;
-	settings.shaderInput = shaderInput;
+	const ShaderInput shaderInput(texture, lightPosition, projectionMatrix, viewMatrix);
+	const RenderSettings settings(ShadingFunctions::texturedLit, VertexFunctions::viewProjection, shaderInput, RasterizationType::Fill);
 	drawTriangles(mesh->triangles, renderTarget, settings);
 
 	TGATools::TGAImage* tgaImage = TGATools::RGBtoTGAImage(renderTarget.getImage());
-	std::string resultFileName = "render.tga";
-	std::filesystem::path resultPath = resourcePath / resultFileName;
+	const std::string resultFileName = "render.tga";
+	const std::filesystem::path resultPath = resourcePath / resultFileName;
 	TGATools::writeTGAImage(tgaImage, resultPath.string());
 
 	return 0;

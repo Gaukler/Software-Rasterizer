@@ -16,6 +16,8 @@
 #include <cmath>
 #include <filesystem>
 #include <stddef.h>
+#include <cassert>
+#include <functional>
 
 //reenable warnings for VS
 #ifdef _MSC_VER

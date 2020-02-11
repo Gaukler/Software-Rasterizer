@@ -11,15 +11,14 @@ namespace objLoader {
 
 	Mesh* loadOBJ(const std::string& path) {
 		std::ifstream file(path, std::ios::binary);
-		if (!file.is_open()) {
-			std::cout << "Unable to open file " << path << std::endl;
-			return nullptr;
-		}
+		assert(file.is_open(), "file not found");
+
 		std::string line;
 		std::vector<cml::vec3> positionList;
 		std::vector<cml::vec3> normalList;
 		std::vector<cml::vec2> uvList;
 		std::vector<TriangleIndices> triangleIndexList;
+
 		while (std::getline(file, line)) {
 			if (line.substr(0, 2) == "v ") {
 				cml::vec3 position;

@@ -16,6 +16,7 @@ namespace TGATools {
 		compressedColorMappedVar2 = 33
 	};
 
+	//no constructor as it's written to directly when loading a TGA file
 	struct TGAheader {
 		char idLength;
 		char colorMapType;
@@ -30,6 +31,8 @@ namespace TGATools {
 	};
 
 	struct TGAImage {
+		inline TGAImage(const TGAheader header, const short bytePerPixel, char* data)
+			: header(header), bytePerPixel(bytePerPixel), data(data){};
 		~TGAImage();
 		TGAheader header;
 		short bytePerPixel;
