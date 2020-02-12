@@ -12,6 +12,7 @@
 #include "DirectoryUtils.h"
 
 int main() {
+
 	const uint32_t width = 1920;
 	const uint32_t height = 1080;
 	RenderTarget renderTarget(width, height);
@@ -35,7 +36,12 @@ int main() {
 
 	const ShaderInput shaderInput(texture, lightPosition, projectionMatrix, viewMatrix);
 	const RenderSettings settings(ShadingFunctions::texturedLit, VertexFunctions::viewProjection, shaderInput, RasterizationType::Fill);
+
+	const auto startTime = std::chrono::high_resolution_clock::now(); //only measure render time
 	drawTriangles(mesh->triangles, renderTarget, settings);
+	const auto endTime = std::chrono::high_resolution_clock::now();
+	const std::chrono::milliseconds duratio = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+	std::cout << "Render time: " << duratio.count() << " ms" << std::endl;
 
 	TGATools::TGAImage* tgaImage = TGATools::RGBtoTGAImage(renderTarget.getImage());
 	const std::string resultFileName = "render.tga";
