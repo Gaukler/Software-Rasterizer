@@ -3,7 +3,7 @@
 #include "Vector.h"
 
 namespace cml {
-	float lerp(float a, float b, float t);
-	cml::vec3 lerp(cml::vec3 a, cml::vec3 b, float t);
-	float radian(const float& degree);
+	float lerp(const float a, const float b, const float t);
+	cml::vec3 lerp(const cml::vec3& a, const cml::vec3& b, const float t);
+	float radian(const float degree);
 }
