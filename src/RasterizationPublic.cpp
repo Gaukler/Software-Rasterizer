@@ -26,14 +26,5 @@ void drawTriangles(const std::vector<Triangle>& triangleList, RenderTarget& targ
 	}
 
 	std::vector<Triangle> clipedTriangles = clipTriangles(transformedTriangles);
-
-	if (settings.rasterType == RasterizationType::Fill) {
-		rasterizeFill(clipedTriangles, target, settings);
-	}
-	else if (settings.rasterType == RasterizationType::Line) {
-		rasterizeLines(clipedTriangles, target, settings);
-	}
-	else if (settings.rasterType == RasterizationType::Point) {
-		rasterizePoints(clipedTriangles, target, settings);
-	}
+	rasterize(clipedTriangles, target, settings);
 }

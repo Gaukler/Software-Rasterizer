@@ -10,6 +10,7 @@
 #include "VertexShader.h"
 #include "CML/MatrixTransforms.h"
 #include "DirectoryUtils.h"
+#include "Benchmark.h"
 
 int main() {
 
@@ -35,13 +36,15 @@ int main() {
 	const cml::mat4x4 viewMatrix = cml::viewMatrixLookAt(cml::vec3(1.f, 1.f, 3.f), cml::vec3(0.f));
 
 	const ShaderInput shaderInput(texture, lightPosition, projectionMatrix, viewMatrix);
-	const RenderSettings settings(ShadingFunctions::texturedLit, VertexFunctions::viewProjection, shaderInput, RasterizationType::Fill);
+	const RenderSettings settings(ShadingFunctions::texturedLit, VertexFunctions::viewProjection, shaderInput);
 
-	const auto startTime = std::chrono::high_resolution_clock::now(); //only measure render time
-	drawTriangles(mesh->triangles, renderTarget, settings);
-	const auto endTime = std::chrono::high_resolution_clock::now();
-	const std::chrono::milliseconds duratio = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-	std::cout << "Render time: " << duratio.count() << " ms" << std::endl;
+	const bool benchmarkRun = true;
+	if (benchmarkRun) {
+		benchmark(mesh, settings, renderTarget);
+	}
+	else {
+		drawTriangles(mesh->triangles, renderTarget, settings);
+	}
 
 	TGATools::TGAImage* tgaImage = TGATools::RGBtoTGAImage(renderTarget.getImage());
 	const std::string resultFileName = "render.tga";

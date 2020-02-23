@@ -18,6 +18,10 @@
 #include <stddef.h>
 #include <cassert>
 #include <functional>
+#include <thread>
+#include <mutex>
+#include <queue>
+#include <array>
 
 //reenable warnings for VS
 #ifdef _MSC_VER

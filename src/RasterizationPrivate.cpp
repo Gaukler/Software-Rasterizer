@@ -1,79 +1,124 @@
 #include "pch.h"
 #include "RasterizationPrivate.h"
 
-//rasterize triangle surface and throws away fragments with a higher distance to line than threshold
-//not efficient but simple and allows for variable line thickness
-void rasterizeLines(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
+//multithreaded tiled rasterization
+void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
 
-	auto isBarycentricInvalidLine = [](cml::vec3 b) {
-		const float delta = 0.02f;
-		return !((abs(b.x) < delta) || (abs(b.y) < delta) || (abs(b.z) < delta));
+	//transform triangles to NDC
+	std::vector<std::array<cml::ivec2, 3>> triangleNDC;
+	triangleNDC.reserve(triangles.size());
+	
+	for (const auto& t : triangles) {
+		std::array<cml::ivec2, 3> NDC = {
+			coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
+			coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
+			coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight())};
+		triangleNDC.push_back(NDC);
+	}
+
+	//store triangle indices per tile
+	cml::ivec2 tileSize = cml::ivec2(16, 16);
+	cml::ivec2 targetResRounded = cml::ivec2(target.getWidth(), target.getHeight());
+	targetResRounded.x += tileSize.x - targetResRounded.x % tileSize.x;
+	targetResRounded.y += tileSize.y - targetResRounded.y % tileSize.y;
+
+	size_t tileRowSize = targetResRounded.x / tileSize.x;
+	size_t tileColumnSize = targetResRounded.y / tileSize.y;
+
+	assert(targetResRounded.x % tileRowSize == 0);
+	assert(targetResRounded.y % tileColumnSize == 0);
+
+	size_t nTiles = tileRowSize * tileColumnSize;
+	std::vector<std::vector<size_t>> tileTriangleList;
+	tileTriangleList.resize(nTiles);
+
+	auto tileIndexFromXY = [tileRowSize](size_t x, size_t y) {
+		return tileRowSize * y + x;
 	};
 
+
 	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
-		Triangle t = triangles[iTriangle];
 
-		const cml::ivec2 p1 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		const cml::ivec2 p2 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		const cml::ivec2 p3 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		std::array<cml::ivec2, 3> NDC = triangleNDC[iTriangle];
+		BoundingBox2DInt triangleBB(
+			cml::ivec2(std::min(std::min(NDC[0].x, NDC[1].x), NDC[2].x), std::min(std::min(NDC[0].y, NDC[1].y), NDC[2].y)),
+			cml::ivec2(std::max(std::max(NDC[0].x, NDC[1].x), NDC[2].x), std::max(std::max(NDC[0].y, NDC[1].y), NDC[2].y))
+		);
 
-		cml::ivec2 bb_min = cml::ivec2(std::min(std::min(p1.x, p2.x), p3.x), std::min(std::min(p1.y, p2.y), p3.y));
-		cml::ivec2 bb_max = cml::ivec2(std::max(std::max(p1.x, p2.x), p3.x), std::max(std::max(p1.y, p2.y), p3.y));
+		//round to tile sizes
+		triangleBB.min.x -= triangleBB.min.x % tileSize.x;
+		triangleBB.min.y -= triangleBB.min.y % tileSize.y;
 
-		for (int x = bb_min.x; x < bb_max.x; x++) {
-			for (int y = bb_min.y; y < bb_max.y; y++) {
-				cml::vec3 b = calcBarycentric(p1, p2, p3, cml::ivec2(x, y));
-				if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z) || isBarycentricInvalidLine(b)) {
-					continue;
-				}
-				Vertex v = interpolateVertexData(t, b);
-				int depth = (int)-v.position.z * INT_MAX;
-				target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
+		triangleBB.max.x += triangleBB.max.x % tileSize.x;
+		triangleBB.max.y += triangleBB.max.y % tileSize.y;
+
+		//write indices to tiles
+		for (size_t x = triangleBB.min.x; x < triangleBB.max.x; x += tileSize.x) {
+			for (size_t y = triangleBB.min.y; y < triangleBB.max.y; y += tileSize.y) {
+				cml::ivec2 tileCo = cml::ivec2(x / tileSize.x, y / tileSize.y);
+				size_t tileIndex = tileIndexFromXY(tileCo.x, tileCo.y);
+				tileTriangleList[tileIndex].push_back(iTriangle);
 			}
 		}
 	}
-}
 
-void rasterizePoints(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
-	for (size_t i = 0; i < triangles.size(); i++) {
+	//tiles are assigned to threads in an alternating fashion
+	//threads are started after task lists are complete
+	//avoids mutex, at the cost of dynamic thread allocation
+	//slightly faster than threadpool
+	const unsigned int nThreads = std::thread::hardware_concurrency();
+	std::vector<std::vector<std::function<void()>>> tasksPerThread;
+	tasksPerThread.resize(nThreads);
 
-		cml::ivec2 position = coordinateNDCtoRaster(triangles[i].v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		int depth = (int)(-triangles[i].v1.position.z * INT_MAX);
-		target.writeDepthTest((size_t)position.x, (size_t)position.y, settings.shadingFunction(triangles[i].v1, settings.shaderInput), depth);
+	size_t currentThread = 0;
+	for (uint32_t tileX = 0; tileX < tileRowSize; tileX++) {
+		for (uint32_t tileY = 0; tileY < tileColumnSize; tileY++) {
+			size_t tileIndex = tileIndexFromXY(tileX, tileY);
+			const auto& indexList = tileTriangleList[tileIndex];
+			for (const size_t triangleIndex : indexList) {
+				const Triangle t = triangles[triangleIndex];
+				const auto NDC = triangleNDC[triangleIndex];
 
-		position = coordinateNDCtoRaster(triangles[i].v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		depth = (int)(-triangles[i].v2.position.z * INT_MAX);
-		target.writeDepthTest((size_t)position.x, (size_t)position.y, settings.shadingFunction(triangles[i].v2, settings.shaderInput), depth);
+				cml::ivec2 bbMin = cml::ivec2(tileSize.x * tileX, tileSize.y * tileY);
+				cml::ivec2 bbMax = bbMin + tileSize;
+				const BoundingBox2DInt tileBB = BoundingBox2DInt(bbMin, bbMax);
 
-		position = coordinateNDCtoRaster(triangles[i].v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		depth = (int)(-triangles[i].v3.position.z * INT_MAX);
-		target.writeDepthTest((size_t)position.x, (size_t)position.y, settings.shadingFunction(triangles[i].v3, settings.shaderInput), depth);
-	}
-}
+				auto execution = [&triangles, &target, &settings, t, tileBB, NDC]() {
+					for (int x = tileBB.min.x; x < tileBB.max.x; x++) {
+						for (int y = tileBB.min.y; y < tileBB.max.y; y++) {
+							cml::vec3 b = calcBarycentric(NDC[0], NDC[1], NDC[2], cml::ivec2((int)x, (int)y));
+							if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z)) {
+								continue;
+							}
+							Vertex v = interpolateVertexData(t, b);
+							int depth = (int)(-v.position.z * INT_MAX);
+							target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
+						}
+					}
+				};
 
-//iterates over every pixel in bounding box, rejecting pixels with invalid barycentric coordinates
-void rasterizeFill(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
-	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
-		const Triangle t = triangles[iTriangle];
-
-		const cml::ivec2 p1 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		const cml::ivec2 p2 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		const cml::ivec2 p3 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-
-		cml::ivec2 bb_min = cml::ivec2(std::min(std::min(p1.x, p2.x), p3.x), std::min(std::min(p1.y, p2.y), p3.y));
-		cml::ivec2 bb_max = cml::ivec2(std::max(std::max(p1.x, p2.x), p3.x), std::max(std::max(p1.y, p2.y), p3.y));
-
-		for (int x = bb_min.x; x < bb_max.x; x++) {
-			for (int y = bb_min.y; y < bb_max.y; y++) {
-				cml::vec3 b = calcBarycentric(p1, p2, p3, cml::ivec2((int)x, (int)y));
-				if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z)) {
-					continue;
-				}
-				Vertex v = interpolateVertexData(t, b);
-				int depth = (int)(-v.position.z * INT_MAX);
-				target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
+				tasksPerThread[currentThread].push_back(execution);
+				currentThread++;
+				currentThread = currentThread % nThreads;
 			}
 		}
+	}
+	
+	//create threads
+	std::vector<std::thread> threads;
+	threads.resize(nThreads);
+
+	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+		threads[threadIndex] = std::thread([&tasksPerThread, threadIndex]() {
+			for (const auto& task : tasksPerThread[threadIndex]) {
+				task();
+			}
+		});
+	}
+
+	//wait until work is finished
+	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+		threads[threadIndex].join();
 	}
 }
 
