@@ -66,7 +66,8 @@ namespace TGATools {
 		char* data = new char[(size_t)header.width * (size_t)header.height * (size_t)bytesPerPixel];
 		for (size_t y = 0; (short)y < header.height; y++) {
 			for (size_t x = 0; (short)x < header.width; x++) {
-				cml::vec3 pixel = (*rgb)[y][x];
+				const cml::vec3 pixelRef = (*rgb)[y][x];
+				cml::vec3 pixel = pixelRef;
 				pixel.x = std::max(std::min(pixel.x, 1.f), 0.f);
 				pixel.y = std::max(std::min(pixel.y, 1.f), 0.f);
 				pixel.z = std::max(std::min(pixel.z, 1.f), 0.f);
