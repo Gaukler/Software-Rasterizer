@@ -2,124 +2,188 @@
 #include "RasterizationPrivate.h"
 
 //multithreaded tiled rasterization
+//void rasterizeBackup(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
+//
+//	//transform triangles to NDC
+//	std::vector<std::array<cml::ivec2, 3>> triangleNDC;
+//	triangleNDC.reserve(triangles.size());
+//	
+//	for (const auto& t : triangles) {
+//		std::array<cml::ivec2, 3> NDC = {
+//			coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
+//			coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
+//			coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight())};
+//		triangleNDC.push_back(NDC);
+//	}
+//
+//	//store triangle indices per tile
+//	cml::ivec2 tileSize = cml::ivec2(16, 16);
+//	cml::ivec2 targetResRounded = cml::ivec2(target.getWidth(), target.getHeight());
+//	targetResRounded.x += tileSize.x - targetResRounded.x % tileSize.x;
+//	targetResRounded.y += tileSize.y - targetResRounded.y % tileSize.y;
+//
+//	size_t tileRowSize = targetResRounded.x / tileSize.x;
+//	size_t tileColumnSize = targetResRounded.y / tileSize.y;
+//
+//	assert(targetResRounded.x % tileRowSize == 0);
+//	assert(targetResRounded.y % tileColumnSize == 0);
+//
+//	size_t nTiles = tileRowSize * tileColumnSize;
+//	std::vector<std::vector<size_t>> tileTriangleList;
+//	tileTriangleList.resize(nTiles);
+//
+//	auto tileIndexFromXY = [tileRowSize](size_t x, size_t y) {
+//		return tileRowSize * y + x;
+//	};
+//
+//
+//	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
+//
+//		std::array<cml::ivec2, 3> NDC = triangleNDC[iTriangle];
+//		BoundingBox2DInt triangleBB(
+//			cml::ivec2(std::min(std::min(NDC[0].x, NDC[1].x), NDC[2].x), std::min(std::min(NDC[0].y, NDC[1].y), NDC[2].y)),
+//			cml::ivec2(std::max(std::max(NDC[0].x, NDC[1].x), NDC[2].x), std::max(std::max(NDC[0].y, NDC[1].y), NDC[2].y))
+//		);
+//
+//		//round to tile sizes
+//		triangleBB.min.x -= triangleBB.min.x % tileSize.x;
+//		triangleBB.min.y -= triangleBB.min.y % tileSize.y;
+//
+//		triangleBB.max.x += triangleBB.max.x % tileSize.x;
+//		triangleBB.max.y += triangleBB.max.y % tileSize.y;
+//
+//		//write indices to tiles
+//		for (size_t x = triangleBB.min.x; x < triangleBB.max.x; x += tileSize.x) {
+//			for (size_t y = triangleBB.min.y; y < triangleBB.max.y; y += tileSize.y) {
+//				cml::ivec2 tileCo = cml::ivec2(x / tileSize.x, y / tileSize.y);
+//				size_t tileIndex = tileIndexFromXY(tileCo.x, tileCo.y);
+//				tileTriangleList[tileIndex].push_back(iTriangle);
+//			}
+//		}
+//	}
+//
+//	//tiles are assigned to threads in an alternating fashion
+//	//threads are started after task lists are complete
+//	//avoids mutex, at the cost of dynamic thread allocation
+//	//slightly faster than threadpool
+//	const unsigned int nThreads = std::thread::hardware_concurrency();
+//	std::vector<std::vector<std::function<void()>>> tasksPerThread;
+//	tasksPerThread.resize(nThreads);
+//
+//	size_t currentThread = 0;
+//	for (uint32_t tileX = 0; tileX < tileRowSize; tileX++) {
+//		for (uint32_t tileY = 0; tileY < tileColumnSize; tileY++) {
+//			size_t tileIndex = tileIndexFromXY(tileX, tileY);
+//			const auto& indexList = tileTriangleList[tileIndex];
+//			for (const size_t triangleIndex : indexList) {
+//				const Triangle t = triangles[triangleIndex];
+//				const auto NDC = triangleNDC[triangleIndex];
+//
+//				cml::ivec2 bbMin = cml::ivec2(tileSize.x * tileX, tileSize.y * tileY);
+//				cml::ivec2 bbMax = bbMin + tileSize;
+//				const BoundingBox2DInt tileBB = BoundingBox2DInt(bbMin, bbMax);
+//
+//				auto execution = [&triangles, &target, &settings, t, tileBB, NDC]() {
+//					for (int x = tileBB.min.x; x < tileBB.max.x; x++) {
+//						for (int y = tileBB.min.y; y < tileBB.max.y; y++) {
+//							cml::vec3 b = calcBarycentric(NDC[0], NDC[1], NDC[2], cml::ivec2((int)x, (int)y));
+//							if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z)) {
+//								continue;
+//							}
+//							Vertex v = interpolateVertexData(t, b);
+//							int depth = (int)(-v.position.z * INT_MAX);
+//							target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
+//						}
+//					}
+//				};
+//
+//				tasksPerThread[currentThread].push_back(execution);
+//				currentThread++;
+//				currentThread = currentThread % nThreads;
+//			}
+//		}
+//	}
+//	
+//	//create threads
+//	std::vector<std::thread> threads;
+//	threads.resize(nThreads);
+//
+//	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+//		threads[threadIndex] = std::thread([&tasksPerThread, threadIndex]() {
+//			for (const auto& task : tasksPerThread[threadIndex]) {
+//				task();
+//			}
+//		});
+//	}
+//
+//	//wait until work is finished
+//	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+//		threads[threadIndex].join();
+//	}
+//}
+
 void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
 
-	//transform triangles to NDC
-	std::vector<std::array<cml::ivec2, 3>> triangleNDC;
-	triangleNDC.reserve(triangles.size());
-	
 	for (const auto& t : triangles) {
-		std::array<cml::ivec2, 3> NDC = {
-			coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
-			coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
-			coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight())};
-		triangleNDC.push_back(NDC);
-	}
 
-	//store triangle indices per tile
-	cml::ivec2 tileSize = cml::ivec2(16, 16);
-	cml::ivec2 targetResRounded = cml::ivec2(target.getWidth(), target.getHeight());
-	targetResRounded.x += tileSize.x - targetResRounded.x % tileSize.x;
-	targetResRounded.y += tileSize.y - targetResRounded.y % tileSize.y;
+		cml::ivec2 v0 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		cml::ivec2 v1 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		cml::ivec2 v2 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
 
-	size_t tileRowSize = targetResRounded.x / tileSize.x;
-	size_t tileColumnSize = targetResRounded.y / tileSize.y;
+		cml::ivec2 edgeVectors[3] = {
+			v0 - v2,
+			v1 - v0,
+			v2 - v1
+		};
 
-	assert(targetResRounded.x % tileRowSize == 0);
-	assert(targetResRounded.y % tileColumnSize == 0);
+		float area = (float)edgeFunction(v0, edgeVectors[0], v1);
+		//skip no surface + backface culling
+		if (area == 0.f) {
+			continue;
+		}
 
-	size_t nTiles = tileRowSize * tileColumnSize;
-	std::vector<std::vector<size_t>> tileTriangleList;
-	tileTriangleList.resize(nTiles);
+		cml::ivec2 bbMin = cml::ivec2(std::min(std::min(v0.x, v1.x), v2.x), std::min(std::min(v0.y, v1.y), v2.y));
+		cml::ivec2 bbMax = cml::ivec2(std::max(std::max(v0.x, v1.x), v2.x), std::max(std::max(v0.y, v1.y), v2.y));
+		const BoundingBox2DInt tileBB = BoundingBox2DInt(bbMin, bbMax);
 
-	auto tileIndexFromXY = [tileRowSize](size_t x, size_t y) {
-		return tileRowSize * y + x;
-	};
+		cml::vec3 initialB;
+		initialB.y = (float)edgeFunction(v0, edgeVectors[0], tileBB.min);
+		initialB.z = (float)edgeFunction(v1, edgeVectors[1], tileBB.min);
+		initialB.x = (float)edgeFunction(v2, edgeVectors[2], tileBB.min);
 
+		cml::vec3 b = initialB;
 
-	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
+		int columnCounter = 0;
+		for (int x = tileBB.min.x; x < tileBB.max.x; x++) {
+			for (int y = tileBB.min.y; y < tileBB.max.y; y++) {				
 
-		std::array<cml::ivec2, 3> NDC = triangleNDC[iTriangle];
-		BoundingBox2DInt triangleBB(
-			cml::ivec2(std::min(std::min(NDC[0].x, NDC[1].x), NDC[2].x), std::min(std::min(NDC[0].y, NDC[1].y), NDC[2].y)),
-			cml::ivec2(std::max(std::max(NDC[0].x, NDC[1].x), NDC[2].x), std::max(std::max(NDC[0].y, NDC[1].y), NDC[2].y))
-		);
-
-		//round to tile sizes
-		triangleBB.min.x -= triangleBB.min.x % tileSize.x;
-		triangleBB.min.y -= triangleBB.min.y % tileSize.y;
-
-		triangleBB.max.x += triangleBB.max.x % tileSize.x;
-		triangleBB.max.y += triangleBB.max.y % tileSize.y;
-
-		//write indices to tiles
-		for (size_t x = triangleBB.min.x; x < triangleBB.max.x; x += tileSize.x) {
-			for (size_t y = triangleBB.min.y; y < triangleBB.max.y; y += tileSize.y) {
-				cml::ivec2 tileCo = cml::ivec2(x / tileSize.x, y / tileSize.y);
-				size_t tileIndex = tileIndexFromXY(tileCo.x, tileCo.y);
-				tileTriangleList[tileIndex].push_back(iTriangle);
+				if (isBarycentricValid(b.x) && isBarycentricValid(b.y) && isBarycentricValid(b.z)) {
+					const cml::vec3 bNormalized = b / area;
+					Vertex v = interpolateVertexData(t, bNormalized);
+					int depth = (int)(-v.position.z * INT_MAX);
+					target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
+				}
+				b.y -= edgeVectors[0].x;
+				b.z -= edgeVectors[1].x;
+				b.x -= edgeVectors[2].x;
 			}
+			//reset
+			b = initialB;
+			//add n * x
+			columnCounter++;
+			b.y += edgeVectors[0].y * columnCounter;
+			b.z += edgeVectors[1].y * columnCounter;
+			b.x += edgeVectors[2].y * columnCounter;
 		}
 	}
+}
 
-	//tiles are assigned to threads in an alternating fashion
-	//threads are started after task lists are complete
-	//avoids mutex, at the cost of dynamic thread allocation
-	//slightly faster than threadpool
-	const unsigned int nThreads = std::thread::hardware_concurrency();
-	std::vector<std::vector<std::function<void()>>> tasksPerThread;
-	tasksPerThread.resize(nThreads);
+int edgeFunction(const cml::ivec2& v, const cml::ivec2& deltaV, const cml::ivec2& p) {
+	return (p.x - v.x) * deltaV.y - (p.y - v.y) * deltaV.x;
+};
 
-	size_t currentThread = 0;
-	for (uint32_t tileX = 0; tileX < tileRowSize; tileX++) {
-		for (uint32_t tileY = 0; tileY < tileColumnSize; tileY++) {
-			size_t tileIndex = tileIndexFromXY(tileX, tileY);
-			const auto& indexList = tileTriangleList[tileIndex];
-			for (const size_t triangleIndex : indexList) {
-				const Triangle t = triangles[triangleIndex];
-				const auto NDC = triangleNDC[triangleIndex];
-
-				cml::ivec2 bbMin = cml::ivec2(tileSize.x * tileX, tileSize.y * tileY);
-				cml::ivec2 bbMax = bbMin + tileSize;
-				const BoundingBox2DInt tileBB = BoundingBox2DInt(bbMin, bbMax);
-
-				auto execution = [&triangles, &target, &settings, t, tileBB, NDC]() {
-					for (int x = tileBB.min.x; x < tileBB.max.x; x++) {
-						for (int y = tileBB.min.y; y < tileBB.max.y; y++) {
-							cml::vec3 b = calcBarycentric(NDC[0], NDC[1], NDC[2], cml::ivec2((int)x, (int)y));
-							if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z)) {
-								continue;
-							}
-							Vertex v = interpolateVertexData(t, b);
-							int depth = (int)(-v.position.z * INT_MAX);
-							target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
-						}
-					}
-				};
-
-				tasksPerThread[currentThread].push_back(execution);
-				currentThread++;
-				currentThread = currentThread % nThreads;
-			}
-		}
-	}
-	
-	//create threads
-	std::vector<std::thread> threads;
-	threads.resize(nThreads);
-
-	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
-		threads[threadIndex] = std::thread([&tasksPerThread, threadIndex]() {
-			for (const auto& task : tasksPerThread[threadIndex]) {
-				task();
-			}
-		});
-	}
-
-	//wait until work is finished
-	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
-		threads[threadIndex].join();
-	}
+bool isBarycentricValid(const float value) {
+	return value <= 0.f;
 }
 
 std::vector<Triangle> clipTriangles(std::vector<Triangle> in) {
@@ -198,27 +262,6 @@ std::vector<Vertex> clipLineAgainsAxisAlignedLine(const std::vector<Vertex>& ver
 		}
 	}
 	return verticesClipped;
-}
-
-cml::vec3 calcBarycentric(const cml::ivec2& v0, const cml::ivec2& v1, const cml::ivec2& v2, const cml::ivec2& p) {
-
-	auto lineFunction = [](const cml::ivec2& v0, const cml::ivec2& v1, const cml::ivec2& p) {
-		return (p.x - v0.x) * (v1.y - v0.y) - (p.y - v0.y) * (v1.x - v0.x);
-	};
-
-	cml::vec3 result;
-	result.z = (float)lineFunction(v0, v1, p);
-	result.x = (float)lineFunction(v1, v2, p);
-	result.y = (float)lineFunction(v2, v0, p);
-	float d = (float)lineFunction(v0, v1, v2);
-
-	if (abs(d) == 0.f) d = 1.f;
-	cml::vec3 test = result / d;
-	return test;
-}
-
-bool isBarycentricInvalid(const float value) {
-	return (value < 0.f) || (value > 1.f);
 }
 
 cml::ivec2 coordinateNDCtoRaster(const cml::vec3& p, const uint32_t& width, const uint32_t& height) {
