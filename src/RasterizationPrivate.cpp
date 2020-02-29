@@ -168,7 +168,7 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 		int minY = std::min(std::min(v0.y, v1.y), v2.y);
 		for (int y = startPoint.y; y >= minY; y--) {
 			//if we landed on a invalid point we left the triangle -> search for new start point
-			if (!(isBarycentricValid(bStartPoint.x) && isBarycentricValid(bStartPoint.y) && isBarycentricValid(bStartPoint.z))) {
+			if (!(isBarycentricValid(bStartPoint))) {
 				int xOffset = 1;
 				cml::ivec3 bRight = bStartPoint;
 				cml::ivec3 bLeft = bStartPoint;
@@ -182,7 +182,7 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 					bRight.z += edgeVectors[1].y;
 					bRight.x += edgeVectors[2].y;
 
-					if (isBarycentricValid(bRight.x) && isBarycentricValid(bRight.y) && isBarycentricValid(bRight.z)) {
+					if (isBarycentricValid(bRight)) {
 						startPoint.x += xOffset;
 						bStartPoint = bRight;
 						break;
@@ -192,7 +192,7 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 					bLeft.z -= edgeVectors[1].y;
 					bLeft.x -= edgeVectors[2].y;
 
-					if (isBarycentricValid(bLeft.x) && isBarycentricValid(bLeft.y) && isBarycentricValid(bLeft.z)) {
+					if (isBarycentricValid(bLeft)) {
 						startPoint.x -= xOffset;
 						bStartPoint = bLeft;
 						break;
@@ -205,7 +205,7 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			cml::ivec2 p = startPoint;
 			//go right
 			while(true){
-				if (isBarycentricValid(b.x) && isBarycentricValid(b.y) && isBarycentricValid(b.z)) {
+				if (isBarycentricValid(b)) {
 					const cml::vec3 bNormalized = (cml::vec3)b / area;
 					Vertex v = interpolateVertexData(t, bNormalized);
 					int depth = (int)(-v.position.z * INT_MAX);
@@ -231,7 +231,7 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			b.x -= edgeVectors[2].y;
 			//go left
 			while (true) {
-				if (isBarycentricValid(b.x) && isBarycentricValid(b.y) && isBarycentricValid(b.z)) {
+				if (isBarycentricValid(b)) {
 					const cml::vec3 bNormalized = (cml::vec3)b / area;
 					Vertex v = interpolateVertexData(t, bNormalized);
 					int depth = (int)(-v.position.z * INT_MAX);
@@ -262,8 +262,8 @@ int edgeFunction(const cml::ivec2& v, const cml::ivec2& deltaV, const cml::ivec2
 	return (p.x - v.x) * deltaV.y - (p.y - v.y) * deltaV.x;
 };
 
-bool isBarycentricValid(const float value) {
-	return value <= 0.f;
+bool isBarycentricValid(const cml::ivec3 b) {
+	return (b.x <= 0) && (b.y <= 0) && (b.z <= 0);
 }
 
 std::vector<Triangle> clipTriangles(std::vector<Triangle> in) {
