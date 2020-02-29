@@ -74,6 +74,24 @@ namespace cml {
 		explicit operator vec2() const;
 	};
 
+	struct ivec3 {
+		ivec3();
+		ivec3(int xIn, int yIn, int zIn);
+		ivec3(int value);
+		int x;
+		int y;
+		int z;
+		int& operator [](const int& index);
+		ivec3 operator *(const int& scalar) const;
+		ivec3 operator /(const int& scalar) const;
+		ivec3 operator +(const int& scalar) const;
+		ivec3 operator -(const int& scalar) const;
+		ivec3 operator +(const ivec3& other) const;
+		ivec3 operator -(const ivec3& other) const;
+
+		explicit operator vec3() const;
+	};
+
 	vec3 normalize(const vec3& v);
 	float length(const vec3& v);
 	float dot(const vec3& v1, const vec3& v2);

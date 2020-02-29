@@ -290,4 +290,74 @@ namespace cml {
 	ivec2::operator vec2() const {
 		return vec2((float)x, (float)y);
 	}
+
+// ---------- ivec2 -----------------
+
+	ivec3::ivec3() : x(0), y(0), z(0) {
+
+	}
+
+	ivec3::ivec3(int xIn, int yIn, int zIn) : x(xIn), y(yIn), z(zIn) {
+
+	}
+
+	ivec3::ivec3(int value) : x(value), y(value), z(value) {
+
+	}
+
+	int& ivec3::operator [](const int& index) {
+		return (&x)[index];
+	}
+
+	ivec3 ivec3::operator *(const int& scalar) const {
+		ivec3 result;
+		result.x = x * scalar;
+		result.y = y * scalar;
+		result.z = z * scalar;
+		return result;
+	}
+
+	ivec3 ivec3::operator /(const int& scalar) const {
+		ivec3 result;
+		result.x = x / scalar;
+		result.y = y / scalar;
+		result.z = z / scalar;
+		return result;
+	}
+
+	ivec3 ivec3::operator +(const int& scalar) const {
+		ivec3 result;
+		result.x = x + scalar;
+		result.y = y + scalar;
+		result.z = z + scalar;
+		return result;
+	}
+
+	ivec3 ivec3::operator -(const int& scalar) const {
+		ivec3 result;
+		result.x = x - scalar;
+		result.y = y - scalar;
+		result.z = z - scalar;
+		return result;
+	}
+
+	ivec3 ivec3::operator +(const ivec3& other) const {
+		ivec3 result;
+		result.x = x + other.x;
+		result.y = y + other.y;
+		result.z = z + other.z;
+		return result;
+	}
+
+	ivec3 ivec3::operator -(const ivec3& other) const {
+		ivec3 result;
+		result.x = x - other.x;
+		result.y = y - other.y;
+		result.z = z - other.z;
+		return result;
+	}
+
+	ivec3::operator vec3() const {
+		return vec3((float)x, (float)y, (float)z);
+	}
 }

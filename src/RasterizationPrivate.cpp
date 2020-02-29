@@ -124,56 +124,136 @@
 
 void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
 
+	//rasterization based on: "A Parallel Algorithm for Polygon Rasterization", Juan Pineda 1988
+	//the edge function is evaluated once for the first pixel, the subsequent values are computed by incrementing
+	//for traversal the scheme from figure 5. is used:
+	//the triangle is traversed from a central line, down from the top pixel
+	//every row is rasterizesd by going left and right until running out of the triangle
+	//when going down if the line goes out of the triangle the triangle has to be searched to reposition the central line
 	for (const auto& t : triangles) {
 
-		cml::ivec2 v0 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		cml::ivec2 v1 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		cml::ivec2 v2 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		const cml::ivec2 v0 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		const cml::ivec2 v1 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+		const cml::ivec2 v2 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
 
-		cml::ivec2 edgeVectors[3] = {
+		const cml::ivec2 edgeVectors[3] = {
 			v0 - v2,
 			v1 - v0,
 			v2 - v1
 		};
 
 		float area = (float)edgeFunction(v0, edgeVectors[0], v1);
-		//skip no surface + backface culling
-		if (area == 0.f) {
+		//skip triangles without surface + backface culling
+		if (area >= 0.f) {
 			continue;
 		}
 
-		cml::ivec2 bbMin = cml::ivec2(std::min(std::min(v0.x, v1.x), v2.x), std::min(std::min(v0.y, v1.y), v2.y));
-		cml::ivec2 bbMax = cml::ivec2(std::max(std::max(v0.x, v1.x), v2.x), std::max(std::max(v0.y, v1.y), v2.y));
-		const BoundingBox2DInt tileBB = BoundingBox2DInt(bbMin, bbMax);
+		cml::ivec2 startPoint;
+		if (v0.y >= v1.y && v0.y >= v2.y) startPoint = v0;
+		else if (v1.y >= v2.y) startPoint = v1;
+		else startPoint = v2;
 
-		cml::vec3 initialB;
-		initialB.y = (float)edgeFunction(v0, edgeVectors[0], tileBB.min);
-		initialB.z = (float)edgeFunction(v1, edgeVectors[1], tileBB.min);
-		initialB.x = (float)edgeFunction(v2, edgeVectors[2], tileBB.min);
+		assert(startPoint.y >= v0.y);
+		assert(startPoint.y >= v1.y);
+		assert(startPoint.y >= v2.y);
 
-		cml::vec3 b = initialB;
+		cml::ivec3 bStartPoint;
+		bStartPoint.y = edgeFunction(v0, edgeVectors[0], startPoint);
+		bStartPoint.z = edgeFunction(v1, edgeVectors[1], startPoint);
+		bStartPoint.x = edgeFunction(v2, edgeVectors[2], startPoint);
 
-		int columnCounter = 0;
-		for (int x = tileBB.min.x; x < tileBB.max.x; x++) {
-			for (int y = tileBB.min.y; y < tileBB.max.y; y++) {				
+		auto bBackup = bStartPoint;
+		auto pBackup = startPoint;
 
+		int minY = std::min(std::min(v0.y, v1.y), v2.y);
+		for (int y = startPoint.y; y >= minY; y--) {
+			//if we landed on a invalid point we left the triangle -> search for new start point
+			if (!(isBarycentricValid(bStartPoint.x) && isBarycentricValid(bStartPoint.y) && isBarycentricValid(bStartPoint.z))) {
+				int xOffset = 1;
+				cml::ivec3 bRight = bStartPoint;
+				cml::ivec3 bLeft = bStartPoint;
+				int minX = std::min(std::min(v0.x, v1.x), v2.x);
+				int maxX = std::max(std::max(v0.x, v1.x), v2.x);
+				int xExtent = maxX - minX;
+				//some thin triangles don't have a valid pixel, because of undersampling, only search in radius of extent
+				for (int xOffset = 1; xOffset < xExtent; xOffset++) {
+					//check right
+					bRight.y += edgeVectors[0].y;
+					bRight.z += edgeVectors[1].y;
+					bRight.x += edgeVectors[2].y;
+
+					if (isBarycentricValid(bRight.x) && isBarycentricValid(bRight.y) && isBarycentricValid(bRight.z)) {
+						startPoint.x += xOffset;
+						bStartPoint = bRight;
+						break;
+					}
+					//check left
+					bLeft.y -= edgeVectors[0].y;
+					bLeft.z -= edgeVectors[1].y;
+					bLeft.x -= edgeVectors[2].y;
+
+					if (isBarycentricValid(bLeft.x) && isBarycentricValid(bLeft.y) && isBarycentricValid(bLeft.z)) {
+						startPoint.x -= xOffset;
+						bStartPoint = bLeft;
+						break;
+					}
+				}
+			}
+
+			//set point to start point
+			cml::ivec3 b  = bStartPoint;
+			cml::ivec2 p = startPoint;
+			//go right
+			while(true){
 				if (isBarycentricValid(b.x) && isBarycentricValid(b.y) && isBarycentricValid(b.z)) {
-					const cml::vec3 bNormalized = b / area;
+					const cml::vec3 bNormalized = (cml::vec3)b / area;
 					Vertex v = interpolateVertexData(t, bNormalized);
 					int depth = (int)(-v.position.z * INT_MAX);
-					target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
+					target.writeDepthTest((size_t)p.x, (size_t)p.y, settings.shadingFunction(v, settings.shaderInput), depth);
 				}
-				b.y -= edgeVectors[0].x;
-				b.z -= edgeVectors[1].x;
-				b.x -= edgeVectors[2].x;
+				else {
+					break;
+				}
+
+				b.y += edgeVectors[0].y;
+				b.z += edgeVectors[1].y;
+				b.x += edgeVectors[2].y;
+
+				p.x++;
 			}
-			//reset
-			b = initialB;
-			//add n * x
-			columnCounter++;
-			b.y += edgeVectors[0].y * columnCounter;
-			b.z += edgeVectors[1].y * columnCounter;
-			b.x += edgeVectors[2].y * columnCounter;
+			//set point to start point
+			p = startPoint;
+			b = bStartPoint; 
+			//already checked start point
+			p.x--; 
+			b.y -= edgeVectors[0].y;
+			b.z -= edgeVectors[1].y;
+			b.x -= edgeVectors[2].y;
+			//go left
+			while (true) {
+				if (isBarycentricValid(b.x) && isBarycentricValid(b.y) && isBarycentricValid(b.z)) {
+					const cml::vec3 bNormalized = (cml::vec3)b / area;
+					Vertex v = interpolateVertexData(t, bNormalized);
+					int depth = (int)(-v.position.z * INT_MAX);
+					target.writeDepthTest((size_t)p.x, (size_t)p.y, settings.shadingFunction(v, settings.shaderInput), depth);
+				}
+				else {
+					break;
+				}
+
+				b.y -= edgeVectors[0].y;
+				b.z -= edgeVectors[1].y;
+				b.x -= edgeVectors[2].y;
+
+				p.x--;
+			}
+
+			//decrement start point y
+			startPoint.y--;
+			//adjust start point barycentric
+			bStartPoint.y += edgeVectors[0].x;
+			bStartPoint.z += edgeVectors[1].x;
+			bStartPoint.x += edgeVectors[2].x;
 		}
 	}
 }
@@ -270,9 +350,47 @@ cml::ivec2 coordinateNDCtoRaster(const cml::vec3& p, const uint32_t& width, cons
 }
 
 Vertex interpolateVertexData(const Triangle& t, const cml::vec3 b) {
-	Vertex res;
-	res.position = t.v1.position * b.x + t.v2.position * b.y + t.v3.position * b.z;
-	res.normal = t.v1.normal * b.x + t.v2.normal * b.y + t.v3.normal * b.z;
-	res.uv = t.v1.uv * b.x + t.v2.uv * b.y + t.v3.uv * b.z;
-	return res;
+	//res.position = t.v1.position * b.x + t.v2.position * b.y + t.v3.position * b.z;
+	//res.normal = t.v1.normal * b.x + t.v2.normal * b.y + t.v3.normal * b.z;
+	//res.uv = t.v1.uv * b.x + t.v2.uv * b.y + t.v3.uv * b.z;
+	//FIXME indexed access to triangle to replace duplicate code
+	const auto& p0 = t.v1.position;
+	const auto& n0 = t.v1.normal;
+	__m128 posReg0  = _mm_setr_ps(p0.x, p0.y, p0.z, t.v1.uv.x);
+	__m128 normReg0 = _mm_setr_ps(n0.x, n0.y, n0.z, t.v1.uv.y);
+
+	const auto& p1 = t.v2.position;
+	const auto& n1 = t.v2.normal;
+	__m128 posReg1  = _mm_setr_ps(p1.x, p1.y, p1.z, t.v2.uv.x);
+	__m128 normReg1 = _mm_setr_ps(n1.x, n1.y, n1.z, t.v2.uv.y);
+
+	const auto& p2 = t.v3.position;
+	const auto& n2 = t.v3.normal;
+	__m128 posReg2  = _mm_setr_ps(p2.x, p2.y, p2.z, t.v3.uv.x);
+	__m128 normReg2 = _mm_setr_ps(n2.x, n2.y, n2.z, t.v3.uv.y);
+
+	__m128 b0Reg = _mm_set1_ps(b.x);
+	__m128 b1Reg = _mm_set1_ps(b.y);
+	__m128 b2Reg = _mm_set1_ps(b.z);
+
+	posReg0 = _mm_mul_ps(posReg0, b0Reg);
+	posReg1 = _mm_mul_ps(posReg1, b1Reg);
+	posReg2 = _mm_mul_ps(posReg2, b2Reg);
+
+	normReg0 = _mm_mul_ps(normReg0, b0Reg);
+	normReg1 = _mm_mul_ps(normReg1, b1Reg);
+	normReg2 = _mm_mul_ps(normReg2, b2Reg);
+
+	union { __m128 posResReg;  float posResArr[4]; };
+	union { __m128 normResReg; float normResArr[4]; };
+
+	posResReg  = _mm_add_ps(posReg0,  _mm_add_ps(posReg1,  posReg2));
+	normResReg = _mm_add_ps(normReg0, _mm_add_ps(normReg1, normReg2));
+
+	Vertex v;
+	v.position = cml::vec3(posResArr[0],  posResArr[1],  posResArr[2]);
+	v.normal   = cml::vec3(normResArr[0], normResArr[1], normResArr[2]);
+	v.uv = cml::vec2(posResArr[3], normResArr[3]);
+
+	return v;
 }

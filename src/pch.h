@@ -22,6 +22,7 @@
 #include <mutex>
 #include <queue>
 #include <array>
+#include <immintrin.h>
 
 //reenable warnings for VS
 #ifdef _MSC_VER
