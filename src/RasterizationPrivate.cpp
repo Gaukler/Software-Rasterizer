@@ -1,129 +1,7 @@
 #include "pch.h"
 #include "RasterizationPrivate.h"
 
-//multithreaded tiled rasterization
-//void rasterizeBackup(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
-//
-//	//transform triangles to NDC
-//	std::vector<std::array<cml::ivec2, 3>> triangleNDC;
-//	triangleNDC.reserve(triangles.size());
-//	
-//	for (const auto& t : triangles) {
-//		std::array<cml::ivec2, 3> NDC = {
-//			coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
-//			coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
-//			coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight())};
-//		triangleNDC.push_back(NDC);
-//	}
-//
-//	//store triangle indices per tile
-//	cml::ivec2 tileSize = cml::ivec2(16, 16);
-//	cml::ivec2 targetResRounded = cml::ivec2(target.getWidth(), target.getHeight());
-//	targetResRounded.x += tileSize.x - targetResRounded.x % tileSize.x;
-//	targetResRounded.y += tileSize.y - targetResRounded.y % tileSize.y;
-//
-//	size_t tileRowSize = targetResRounded.x / tileSize.x;
-//	size_t tileColumnSize = targetResRounded.y / tileSize.y;
-//
-//	assert(targetResRounded.x % tileRowSize == 0);
-//	assert(targetResRounded.y % tileColumnSize == 0);
-//
-//	size_t nTiles = tileRowSize * tileColumnSize;
-//	std::vector<std::vector<size_t>> tileTriangleList;
-//	tileTriangleList.resize(nTiles);
-//
-//	auto tileIndexFromXY = [tileRowSize](size_t x, size_t y) {
-//		return tileRowSize * y + x;
-//	};
-//
-//
-//	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
-//
-//		std::array<cml::ivec2, 3> NDC = triangleNDC[iTriangle];
-//		BoundingBox2DInt triangleBB(
-//			cml::ivec2(std::min(std::min(NDC[0].x, NDC[1].x), NDC[2].x), std::min(std::min(NDC[0].y, NDC[1].y), NDC[2].y)),
-//			cml::ivec2(std::max(std::max(NDC[0].x, NDC[1].x), NDC[2].x), std::max(std::max(NDC[0].y, NDC[1].y), NDC[2].y))
-//		);
-//
-//		//round to tile sizes
-//		triangleBB.min.x -= triangleBB.min.x % tileSize.x;
-//		triangleBB.min.y -= triangleBB.min.y % tileSize.y;
-//
-//		triangleBB.max.x += triangleBB.max.x % tileSize.x;
-//		triangleBB.max.y += triangleBB.max.y % tileSize.y;
-//
-//		//write indices to tiles
-//		for (size_t x = triangleBB.min.x; x < triangleBB.max.x; x += tileSize.x) {
-//			for (size_t y = triangleBB.min.y; y < triangleBB.max.y; y += tileSize.y) {
-//				cml::ivec2 tileCo = cml::ivec2(x / tileSize.x, y / tileSize.y);
-//				size_t tileIndex = tileIndexFromXY(tileCo.x, tileCo.y);
-//				tileTriangleList[tileIndex].push_back(iTriangle);
-//			}
-//		}
-//	}
-//
-//	//tiles are assigned to threads in an alternating fashion
-//	//threads are started after task lists are complete
-//	//avoids mutex, at the cost of dynamic thread allocation
-//	//slightly faster than threadpool
-//	const unsigned int nThreads = std::thread::hardware_concurrency();
-//	std::vector<std::vector<std::function<void()>>> tasksPerThread;
-//	tasksPerThread.resize(nThreads);
-//
-//	size_t currentThread = 0;
-//	for (uint32_t tileX = 0; tileX < tileRowSize; tileX++) {
-//		for (uint32_t tileY = 0; tileY < tileColumnSize; tileY++) {
-//			size_t tileIndex = tileIndexFromXY(tileX, tileY);
-//			const auto& indexList = tileTriangleList[tileIndex];
-//			for (const size_t triangleIndex : indexList) {
-//				const Triangle t = triangles[triangleIndex];
-//				const auto NDC = triangleNDC[triangleIndex];
-//
-//				cml::ivec2 bbMin = cml::ivec2(tileSize.x * tileX, tileSize.y * tileY);
-//				cml::ivec2 bbMax = bbMin + tileSize;
-//				const BoundingBox2DInt tileBB = BoundingBox2DInt(bbMin, bbMax);
-//
-//				auto execution = [&triangles, &target, &settings, t, tileBB, NDC]() {
-//					for (int x = tileBB.min.x; x < tileBB.max.x; x++) {
-//						for (int y = tileBB.min.y; y < tileBB.max.y; y++) {
-//							cml::vec3 b = calcBarycentric(NDC[0], NDC[1], NDC[2], cml::ivec2((int)x, (int)y));
-//							if (isBarycentricInvalid(b.x) || isBarycentricInvalid(b.y) || isBarycentricInvalid(b.z)) {
-//								continue;
-//							}
-//							Vertex v = interpolateVertexData(t, b);
-//							int depth = (int)(-v.position.z * INT_MAX);
-//							target.writeDepthTest((size_t)x, (size_t)y, settings.shadingFunction(v, settings.shaderInput), depth);
-//						}
-//					}
-//				};
-//
-//				tasksPerThread[currentThread].push_back(execution);
-//				currentThread++;
-//				currentThread = currentThread % nThreads;
-//			}
-//		}
-//	}
-//	
-//	//create threads
-//	std::vector<std::thread> threads;
-//	threads.resize(nThreads);
-//
-//	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
-//		threads[threadIndex] = std::thread([&tasksPerThread, threadIndex]() {
-//			for (const auto& task : tasksPerThread[threadIndex]) {
-//				task();
-//			}
-//		});
-//	}
-//
-//	//wait until work is finished
-//	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
-//		threads[threadIndex].join();
-//	}
-//}
-
 void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings) {
-
 	//rasterization based on: "A Parallel Algorithm for Polygon Rasterization", Juan Pineda 1988
 	//the edge function is evaluated once for the first pixel, the subsequent values are computed by incrementing
 	//for traversal the scheme from figure 5. is used:
@@ -141,6 +19,10 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			v1 - v0,
 			v2 - v1
 		};
+
+		int minX = std::min(std::min(v0.x, v1.x), v2.x);
+		int maxX = std::max(std::max(v0.x, v1.x), v2.x);
+		int xExtent = maxX - minX;
 
 		float area = (float)edgeFunction(v0, edgeVectors[0], v1);
 		//skip triangles without surface + backface culling
@@ -162,26 +44,19 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 		bStartPoint.z = edgeFunction(v1, edgeVectors[1], startPoint);
 		bStartPoint.x = edgeFunction(v2, edgeVectors[2], startPoint);
 
-		auto bBackup = bStartPoint;
-		auto pBackup = startPoint;
-
 		int minY = std::min(std::min(v0.y, v1.y), v2.y);
 		for (int y = startPoint.y; y >= minY; y--) {
 			//if we landed on a invalid point we left the triangle -> search for new start point
 			if (!(isBarycentricValid(bStartPoint))) {
 				int xOffset = 1;
 				cml::ivec3 bRight = bStartPoint;
-				cml::ivec3 bLeft = bStartPoint;
-				int minX = std::min(std::min(v0.x, v1.x), v2.x);
-				int maxX = std::max(std::max(v0.x, v1.x), v2.x);
-				int xExtent = maxX - minX;
+				cml::ivec3 bLeft  = bStartPoint;
 				//some thin triangles don't have a valid pixel, because of undersampling, only search in radius of extent
 				for (int xOffset = 1; xOffset < xExtent; xOffset++) {
 					//check right
 					bRight.y += edgeVectors[0].y;
 					bRight.z += edgeVectors[1].y;
 					bRight.x += edgeVectors[2].y;
-
 					if (isBarycentricValid(bRight)) {
 						startPoint.x += xOffset;
 						bStartPoint = bRight;
@@ -191,7 +66,6 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 					bLeft.y -= edgeVectors[0].y;
 					bLeft.z -= edgeVectors[1].y;
 					bLeft.x -= edgeVectors[2].y;
-
 					if (isBarycentricValid(bLeft)) {
 						startPoint.x -= xOffset;
 						bStartPoint = bLeft;
@@ -201,19 +75,14 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			}
 
 			//set point to start point
-			cml::ivec3 b  = bStartPoint;
+			cml::ivec3 b = bStartPoint;
 			cml::ivec2 p = startPoint;
 			//go right
-			while(true){
-				if (isBarycentricValid(b)) {
-					const cml::vec3 bNormalized = (cml::vec3)b / area;
-					Vertex v = interpolateVertexData(t, bNormalized);
-					int depth = (int)(-v.position.z * INT_MAX);
-					target.writeDepthTest((size_t)p.x, (size_t)p.y, settings.shadingFunction(v, settings.shaderInput), depth);
-				}
-				else {
-					break;
-				}
+			while(isBarycentricValid(b)){
+				const cml::vec3 bNormalized = (cml::vec3)b / area;
+				Vertex v = interpolateVertexData(t, bNormalized);
+				int depth = (int)(-v.position.z * INT_MAX);
+				target.writeDepthTest((size_t)p.x, (size_t)p.y, settings.shadingFunction(v, settings.shaderInput), depth);
 
 				b.y += edgeVectors[0].y;
 				b.z += edgeVectors[1].y;
@@ -230,16 +99,11 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			b.z -= edgeVectors[1].y;
 			b.x -= edgeVectors[2].y;
 			//go left
-			while (true) {
-				if (isBarycentricValid(b)) {
-					const cml::vec3 bNormalized = (cml::vec3)b / area;
-					Vertex v = interpolateVertexData(t, bNormalized);
-					int depth = (int)(-v.position.z * INT_MAX);
-					target.writeDepthTest((size_t)p.x, (size_t)p.y, settings.shadingFunction(v, settings.shaderInput), depth);
-				}
-				else {
-					break;
-				}
+			while (isBarycentricValid(b)) {
+				const cml::vec3 bNormalized = (cml::vec3)b / area;
+				Vertex v = interpolateVertexData(t, bNormalized);
+				int depth = (int)(-v.position.z * INT_MAX);
+				target.writeDepthTest((size_t)p.x, (size_t)p.y, settings.shadingFunction(v, settings.shaderInput), depth);
 
 				b.y -= edgeVectors[0].y;
 				b.z -= edgeVectors[1].y;
