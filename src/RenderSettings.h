@@ -13,6 +13,4 @@ struct RenderSettings {
 	VertexFunctions::VertexShaderResult(*vertexFunctions)(const Vertex& v, const ShaderInput& input);
 
 	ShaderInput shaderInput;
-private:
-	float padding = 0.f;
 };

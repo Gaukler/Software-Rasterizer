@@ -97,8 +97,8 @@ ColorSIMD RGBImage::sampleSIMD(__m128 uvX, __m128 uvY) {
 
 
 	//floor
-	__m128i width  = _mm_set1_epi32(m_width  - 1);
-	__m128i height = _mm_set1_epi32(m_height - 1);
+	__m128i width  = _mm_set1_epi32((int)m_width  - 1);
+	__m128i height = _mm_set1_epi32((int)m_height - 1);
 	
 	__m128 rasterX = _mm_mul_ps(uvX, _mm_cvtepi32_ps(width));
 	__m128 rasterY = _mm_mul_ps(uvY, _mm_cvtepi32_ps(height));

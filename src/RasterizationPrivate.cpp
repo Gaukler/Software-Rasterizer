@@ -59,7 +59,6 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			//in this case only one pixel is processed at a time, with the barycentric vector being SIMDed
 			//this is because most of the time only the first pixel to the left and right is tested
 			if (!(isBarycentricVaildSingleSIMD(bStart))) {
-				int xOffset = 1;
 				__m128i bRight = bStart;
 				__m128i bLeft  = bStart;
 				//some thin triangles don't have a valid pixel, because of undersampling, only search in radius of extent
@@ -121,12 +120,12 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 				union { __m128i valid; int valid_arr[4]; };
 				valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
 				union {__m128i depth; int depth_arr[4];};
-				depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps(-INT_MAX)));
+				depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
 
 				union { __m128i xCo; int xCo_arr[4]; };
 				xCo = _mm_add_epi32(_mm_set1_epi32(p.x), lane);
 
-				target.writeDepthTestSIMD(xCo_arr, y, colors, valid, depth_arr);
+				target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
 				inTriangle = valid_arr[0] && valid_arr[1] && valid_arr[2];
 
 				bY = _mm_add_epi32(bY, edge0Y_x4);
@@ -167,12 +166,12 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 				union { __m128i valid; int valid_arr[4]; };
 				valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
 				union { __m128i depth; int depth_arr[4]; };
-				depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps(-INT_MAX)));
+				depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
 
 				union { __m128i xCo; int xCo_arr[4]; };
 				xCo = _mm_sub_epi32(_mm_set1_epi32(p.x), lane);
 
-				target.writeDepthTestSIMD(xCo_arr, y, colors, valid, depth_arr);
+				target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
 				inTriangle = valid_arr[0] && valid_arr[1] && valid_arr[2];
 
 				bY = _mm_sub_epi32(bY, edge0Y_x4);

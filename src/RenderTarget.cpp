@@ -34,7 +34,7 @@ void RenderTarget::writeDepthTestSIMD(int x[4], const size_t y, const ColorSIMD&
 
 	union { __m128i depthImage; int depthImage_arr[4]; };
 	for (int lane = 0; lane < 4; lane++) {
-		depthImage_arr[lane] = (*m_depthBuffer)[y][x[lane]];
+		depthImage_arr[lane] = (*m_depthBuffer)[y][(size_t)x[lane]];
 	}
 
 	union { __m128i drawPixel; int drawPixel_arr[4]; };
@@ -42,7 +42,7 @@ void RenderTarget::writeDepthTestSIMD(int x[4], const size_t y, const ColorSIMD&
 
 	union { __m128i xReg; int x_arr[4]; };
 	union { __m128i yReg; int y_arr[4]; };
-	yReg = _mm_set1_epi32(y);
+	yReg = _mm_set1_epi32((int)y);
 	xReg = _mm_setr_epi32(x[0], x[1], x[2], x[3]);
 
 	xReg = _mm_and_si128(xReg, drawPixel);
@@ -51,8 +51,8 @@ void RenderTarget::writeDepthTestSIMD(int x[4], const size_t y, const ColorSIMD&
 	for (int lane = 0; lane < 4; lane++) {
 		if (drawPixel_arr[lane]) {
 			cml::vec3 pixel = cml::vec3(colors.rArr[lane], colors.gArr[lane], colors.bArr[lane]);
-			(*m_image)[y][x[lane]] = pixel;
-			(*m_depthBuffer)[y][x[lane]] = depth_arr[lane];
+			(*m_image)[y][(size_t)x[lane]] = pixel;
+			(*m_depthBuffer)[y][(size_t)x[lane]] = depth_arr[lane];
 		}
 	}
 }
