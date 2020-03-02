@@ -13,3 +13,17 @@ struct ShaderInput {
 private:
 	float padding = 0.f;
 };
+
+//SIMD result of four vertex interpolations
+struct InterpolationResult {
+	union { __m128 normalX; float normalXArr[4]; };
+	union { __m128 normalY; float normalYArr[4]; };
+	union { __m128 normalZ; float normalZArr[4]; };
+
+	union { __m128 posX;	float posXArr[4]; };
+	union { __m128 posY;	float posYArr[4]; };
+	union { __m128 posZ; float posZArr[4]; };
+
+	union { __m128 uvX; float uvXArr[4]; };
+	union { __m128 uvY; float uvYArr[4]; };
+};

@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "CML/Vector.h"
+#include "ColorSIMD.h"
 
 struct RGBImageRow {
 	RGBImageRow(size_t length);
@@ -17,6 +18,7 @@ public:
 	size_t getHeight();
 	void clear(const cml::vec3& color = cml::vec3(0.f));
 	cml::vec3 sample(const cml::vec2& uv);
+	ColorSIMD sampleSIMD(__m128 uvX, __m128 uvY);
 
 	RGBImageRow& operator [](size_t index);
 	~RGBImage();

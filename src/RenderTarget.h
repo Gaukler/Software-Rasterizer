@@ -10,6 +10,7 @@ public:
 	cml::vec3 read(const size_t x, const size_t y);
 	void write(const size_t x, const size_t y, const cml::vec3& value);
 	void writeDepthTest(const size_t x, const size_t y, const cml::vec3& value, const int& depth);
+	void writeDepthTestSIMD(int x[4], const size_t y, const ColorSIMD& colors, const __m128i& valid, const int depth_arr[4]);
 	RGBImage* getImage();
 
 	size_t getWidth();

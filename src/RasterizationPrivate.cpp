@@ -7,6 +7,7 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 	//for traversal the scheme from figure 5. is used:
 	//the triangle is traversed from a central line, down from the top pixel
 	//every row is rasterizesd by going left and right until running out of the triangle
+	//row traversal processes four pixels at a time, using SIMD
 	//when going down if the line goes out of the triangle the triangle has to be searched to reposition the central line
 	for (const auto& t : triangles) {
 
@@ -30,6 +31,14 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			continue;
 		}
 
+		__m128i edge0Y = _mm_set1_epi32(edgeVectors[0].y);
+		__m128i edge1Y = _mm_set1_epi32(edgeVectors[1].y);
+		__m128i edge2Y = _mm_set1_epi32(edgeVectors[2].y);
+
+		//all edges in one register, used for search
+		__m128i edgesX = _mm_setr_epi32(edgeVectors[2].x, edgeVectors[0].x, edgeVectors[1].x, 0);
+		__m128i edgesY = _mm_setr_epi32(edgeVectors[2].y, edgeVectors[0].y, edgeVectors[1].y, 0);
+
 		cml::ivec2 startPoint;
 		if (v0.y >= v1.y && v0.y >= v2.y) startPoint = v0;
 		else if (v1.y >= v2.y) startPoint = v1;
@@ -39,85 +48,144 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 		assert(startPoint.y >= v1.y);
 		assert(startPoint.y >= v2.y);
 
-		cml::ivec3 bStartPoint;
-		bStartPoint.y = edgeFunction(v0, edgeVectors[0], startPoint);
-		bStartPoint.z = edgeFunction(v1, edgeVectors[1], startPoint);
-		bStartPoint.x = edgeFunction(v2, edgeVectors[2], startPoint);
+		union { __m128i bStart; int bStart_arr[4]; };
+		bStart_arr[1] = edgeFunction(v0, edgeVectors[0], startPoint);
+		bStart_arr[2] = edgeFunction(v1, edgeVectors[1], startPoint);
+		bStart_arr[0] = edgeFunction(v2, edgeVectors[2], startPoint);
 
 		int minY = std::min(std::min(v0.y, v1.y), v2.y);
 		for (int y = startPoint.y; y >= minY; y--) {
 			//if we landed on a invalid point we left the triangle -> search for new start point
-			if (!(isBarycentricValid(bStartPoint))) {
+			//in this case only one pixel is processed at a time, with the barycentric vector being SIMDed
+			//this is because most of the time only the first pixel to the left and right is tested
+			if (!(isBarycentricVaildSingleSIMD(bStart))) {
 				int xOffset = 1;
-				cml::ivec3 bRight = bStartPoint;
-				cml::ivec3 bLeft  = bStartPoint;
+				__m128i bRight = bStart;
+				__m128i bLeft  = bStart;
 				//some thin triangles don't have a valid pixel, because of undersampling, only search in radius of extent
 				for (int xOffset = 1; xOffset < xExtent; xOffset++) {
 					//check right
-					bRight.y += edgeVectors[0].y;
-					bRight.z += edgeVectors[1].y;
-					bRight.x += edgeVectors[2].y;
-					if (isBarycentricValid(bRight)) {
+					bRight = _mm_add_epi32(bRight, edgesY);
+					if (isBarycentricVaildSingleSIMD(bRight)) {
 						startPoint.x += xOffset;
-						bStartPoint = bRight;
+						bStart = bRight;
 						break;
 					}
 					//check left
-					bLeft.y -= edgeVectors[0].y;
-					bLeft.z -= edgeVectors[1].y;
-					bLeft.x -= edgeVectors[2].y;
-					if (isBarycentricValid(bLeft)) {
+					bLeft = _mm_sub_epi32(bLeft, edgesY);
+					if (isBarycentricVaildSingleSIMD(bLeft)) {
 						startPoint.x -= xOffset;
-						bStartPoint = bLeft;
+						bStart = bLeft;
 						break;
 					}
 				}
 			}
 
 			//set point to start point
-			cml::ivec3 b = bStartPoint;
 			cml::ivec2 p = startPoint;
+
+			union { __m128i bX; int bXArr[4]; };
+			union { __m128i bY; int bYArr[4]; };
+			union { __m128i bZ; int bZArr[4]; };
+
+			bX = _mm_set1_epi32(bStart_arr[0]);
+			bY = _mm_set1_epi32(bStart_arr[1]);
+			bZ = _mm_set1_epi32(bStart_arr[2]);
+
+			__m128i lane = _mm_setr_epi32(0, 1, 2, 3);
+
+			bY = _mm_add_epi32(bY, _mm_mullo_epi32(edge0Y, lane));
+			bZ = _mm_add_epi32(bZ, _mm_mullo_epi32(edge1Y, lane));
+			bX = _mm_add_epi32(bX, _mm_mullo_epi32(edge2Y, lane));
+
+			__m128i four = _mm_set1_epi32(4);
+			__m128i edge0Y_x4 = _mm_mullo_epi32(edge0Y, four);
+			__m128i edge1Y_x4 = _mm_mullo_epi32(edge1Y, four);
+			__m128i edge2Y_x4 = _mm_mullo_epi32(edge2Y, four);
+
 			//go right
-			while(isBarycentricValid(b)){
-				const cml::vec3 bNormalized = (cml::vec3)b / area;
-				Vertex v = interpolateVertexData(t, bNormalized);
-				int depth = (int)(-v.position.z * INT_MAX);
-				target.writeDepthTest((size_t)p.x, (size_t)p.y, settings.shadingFunction(v, settings.shaderInput), depth);
+			bool inTriangle = true;
+			while(inTriangle){
 
-				b.y += edgeVectors[0].y;
-				b.z += edgeVectors[1].y;
-				b.x += edgeVectors[2].y;
+				union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
+				union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
+				union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
 
-				p.x++;
+				__m128 areaReg = _mm_set1_ps(area);
+				bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
+				bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
+				bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
+
+				InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
+				ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
+				union { __m128i valid; int valid_arr[4]; };
+				valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
+				union {__m128i depth; int depth_arr[4];};
+				depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps(-INT_MAX)));
+
+				union { __m128i xCo; int xCo_arr[4]; };
+				xCo = _mm_add_epi32(_mm_set1_epi32(p.x), lane);
+
+				target.writeDepthTestSIMD(xCo_arr, y, colors, valid, depth_arr);
+				inTriangle = valid_arr[0] && valid_arr[1] && valid_arr[2];
+
+				bY = _mm_add_epi32(bY, edge0Y_x4);
+				bZ = _mm_add_epi32(bZ, edge1Y_x4);
+				bX = _mm_add_epi32(bX, edge2Y_x4);
+
+				p.x += 4;
 			}
 			//set point to start point
 			p = startPoint;
-			b = bStartPoint; 
 			//already checked start point
-			p.x--; 
-			b.y -= edgeVectors[0].y;
-			b.z -= edgeVectors[1].y;
-			b.x -= edgeVectors[2].y;
+			p.x--;
+
+			bY = _mm_set1_epi32(bStart_arr[1] - edgeVectors[0].y);
+			bZ = _mm_set1_epi32(bStart_arr[2] - edgeVectors[1].y);
+			bX = _mm_set1_epi32(bStart_arr[0] - edgeVectors[2].y);
+
+			bY = _mm_sub_epi32(bY, _mm_mullo_epi32(edge0Y, lane));
+			bZ = _mm_sub_epi32(bZ, _mm_mullo_epi32(edge1Y, lane));
+			bX = _mm_sub_epi32(bX, _mm_mullo_epi32(edge2Y, lane));
+			
 			//go left
-			while (isBarycentricValid(b)) {
-				const cml::vec3 bNormalized = (cml::vec3)b / area;
-				Vertex v = interpolateVertexData(t, bNormalized);
-				int depth = (int)(-v.position.z * INT_MAX);
-				target.writeDepthTest((size_t)p.x, (size_t)p.y, settings.shadingFunction(v, settings.shaderInput), depth);
+			inTriangle = true;
+			while (inTriangle) {
 
-				b.y -= edgeVectors[0].y;
-				b.z -= edgeVectors[1].y;
-				b.x -= edgeVectors[2].y;
+				union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
+				union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
+				union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
 
-				p.x--;
+				__m128 areaReg = _mm_set1_ps(area);
+				bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
+				bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
+				bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
+
+				InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
+				ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
+
+				union { __m128i valid; int valid_arr[4]; };
+				valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
+				union { __m128i depth; int depth_arr[4]; };
+				depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps(-INT_MAX)));
+
+				union { __m128i xCo; int xCo_arr[4]; };
+				xCo = _mm_sub_epi32(_mm_set1_epi32(p.x), lane);
+
+				target.writeDepthTestSIMD(xCo_arr, y, colors, valid, depth_arr);
+				inTriangle = valid_arr[0] && valid_arr[1] && valid_arr[2];
+
+				bY = _mm_sub_epi32(bY, edge0Y_x4);
+				bZ = _mm_sub_epi32(bZ, edge1Y_x4);
+				bX = _mm_sub_epi32(bX, edge2Y_x4);
+
+				p.x -= 4;
 			}
 
 			//decrement start point y
 			startPoint.y--;
 			//adjust start point barycentric
-			bStartPoint.y += edgeVectors[0].x;
-			bStartPoint.z += edgeVectors[1].x;
-			bStartPoint.x += edgeVectors[2].x;
+			bStart = _mm_add_epi32(bStart, edgesX);
 		}
 	}
 }
@@ -128,6 +196,20 @@ int edgeFunction(const cml::ivec2& v, const cml::ivec2& deltaV, const cml::ivec2
 
 bool isBarycentricValid(const cml::ivec3 b) {
 	return (b.x <= 0) && (b.y <= 0) && (b.z <= 0);
+}
+
+bool isBarycentricVaildSingleSIMD(const __m128i& b) {
+	union { __m128i result; int result_arr[4]; };
+	result = _mm_cmplt_epi32(b, _mm_set1_epi32(1)); //less than 1 = less/equal than 0
+	return result_arr[0] && result_arr[1] && result_arr[2];
+}
+
+__m128i isBarycentricValidMultipleSIMD(const __m128i& x, const __m128i& y, const __m128i& z) {
+	__m128i cprX = _mm_cmplt_epi32(x, _mm_set1_epi32(1));
+	__m128i cprY = _mm_cmplt_epi32(y, _mm_set1_epi32(1));
+	__m128i cprZ = _mm_cmplt_epi32(z, _mm_set1_epi32(1));
+
+	return _mm_and_si128(_mm_and_si128(cprX, cprY), cprZ);
 }
 
 std::vector<Triangle> clipTriangles(std::vector<Triangle> in) {
@@ -211,6 +293,80 @@ std::vector<Vertex> clipLineAgainsAxisAlignedLine(const std::vector<Vertex>& ver
 cml::ivec2 coordinateNDCtoRaster(const cml::vec3& p, const uint32_t& width, const uint32_t& height) {
 	const cml::vec3 pZeroToOne = p * 0.5f + 0.5f;
 	return cml::ivec2((int)std::round(pZeroToOne.x * (width - 1)), (int)std::round(pZeroToOne.y * (height - 1)));
+}
+
+InterpolationResult interpolateVertexDataSIMD(const Triangle& t, const __m128& b0, const __m128& b1, const __m128& b2) {
+	InterpolationResult result;
+
+	//position
+	__m128 p0X = _mm_set1_ps(t.v1.position.x);
+	__m128 p0Y = _mm_set1_ps(t.v1.position.y);
+	__m128 p0Z = _mm_set1_ps(t.v1.position.z);
+
+	__m128 p1X = _mm_set1_ps(t.v2.position.x);
+	__m128 p1Y = _mm_set1_ps(t.v2.position.y);
+	__m128 p1Z = _mm_set1_ps(t.v2.position.z);
+
+	__m128 p2X = _mm_set1_ps(t.v3.position.x);
+	__m128 p2Y = _mm_set1_ps(t.v3.position.y);
+	__m128 p2Z = _mm_set1_ps(t.v3.position.z);
+
+	result.posX = _mm_mul_ps(p0X, b0);
+	result.posX = _mm_add_ps(result.posX, _mm_mul_ps(p1X, b1));
+	result.posX = _mm_add_ps(result.posX, _mm_mul_ps(p2X, b2));
+
+	result.posY = _mm_mul_ps(p0Y, b0);
+	result.posY = _mm_add_ps(result.posY, _mm_mul_ps(p1Y, b1));
+	result.posY = _mm_add_ps(result.posY, _mm_mul_ps(p2Y, b2));
+
+	result.posZ = _mm_mul_ps(p0Z, b0);
+	result.posZ = _mm_add_ps(result.posZ, _mm_mul_ps(p1Z, b1));
+	result.posZ = _mm_add_ps(result.posZ, _mm_mul_ps(p2Z, b2));
+
+	//normal
+	__m128 n0X = _mm_set1_ps(t.v1.normal.x);
+	__m128 n0Y = _mm_set1_ps(t.v1.normal.y);
+	__m128 n0Z = _mm_set1_ps(t.v1.normal.z);
+		   
+	__m128 n1X = _mm_set1_ps(t.v2.normal.x);
+	__m128 n1Y = _mm_set1_ps(t.v2.normal.y);
+	__m128 n1Z = _mm_set1_ps(t.v2.normal.z);
+		   
+	__m128 n2X = _mm_set1_ps(t.v3.normal.x);
+	__m128 n2Y = _mm_set1_ps(t.v3.normal.y);
+	__m128 n2Z = _mm_set1_ps(t.v3.normal.z);
+
+	result.normalX = _mm_mul_ps(n0X, b0);
+	result.normalX = _mm_add_ps(result.normalX, _mm_mul_ps(n1X, b1));
+	result.normalX = _mm_add_ps(result.normalX, _mm_mul_ps(n2X, b2));
+
+	result.normalY = _mm_mul_ps(n0Y, b0);
+	result.normalY = _mm_add_ps(result.normalY, _mm_mul_ps(n1Y, b1));
+	result.normalY = _mm_add_ps(result.normalY, _mm_mul_ps(n2Y, b2));
+
+	result.normalZ = _mm_mul_ps(n0Z, b0);
+	result.normalZ = _mm_add_ps(result.normalZ, _mm_mul_ps(n1Z, b1));
+	result.normalZ = _mm_add_ps(result.normalZ, _mm_mul_ps(n2Z, b2));
+
+	//UV
+	__m128 uv0X = _mm_set1_ps(t.v1.uv.x);
+	__m128 uv0Y = _mm_set1_ps(t.v1.uv.y);
+
+	__m128 uv1X = _mm_set1_ps(t.v2.uv.x);
+	__m128 uv1Y = _mm_set1_ps(t.v2.uv.y);
+
+	__m128 uv2X = _mm_set1_ps(t.v3.uv.x);
+	__m128 uv2Y = _mm_set1_ps(t.v3.uv.y);
+
+	result.uvX = _mm_mul_ps(uv0X, b0);
+	result.uvX = _mm_add_ps(result.uvX, _mm_mul_ps(uv1X, b1));
+	result.uvX = _mm_add_ps(result.uvX, _mm_mul_ps(uv2X, b2));
+
+	result.uvY = _mm_mul_ps(uv0Y, b0);
+	result.uvY = _mm_add_ps(result.uvY, _mm_mul_ps(uv1Y, b1));
+	result.uvY = _mm_add_ps(result.uvY, _mm_mul_ps(uv2Y, b2));
+
+	return result;
 }
 
 Vertex interpolateVertexData(const Triangle& t, const cml::vec3 b) {

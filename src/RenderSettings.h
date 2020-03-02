@@ -2,13 +2,14 @@
 #include "pch.h"
 #include "Shading.h"
 #include "VertexShader.h"
+#include "ColorSIMD.h"
 
 struct RenderSettings {
-	inline RenderSettings(cml::vec3(*shadingFunction)(const Vertex& t, const ShaderInput& input), VertexFunctions::VertexShaderResult(*vertexFunctions)(const Vertex& v, const ShaderInput& input),
+	inline RenderSettings(ColorSIMD(*shadingFunction)(const InterpolationResult& t, const ShaderInput& input), VertexFunctions::VertexShaderResult(*vertexFunctions)(const Vertex& v, const ShaderInput& input),
 		ShaderInput shaderInput)
 		: shadingFunction(shadingFunction), vertexFunctions(vertexFunctions), shaderInput(shaderInput) {};
 
-	cml::vec3(*shadingFunction)(const Vertex& t, const ShaderInput& input);
+	ColorSIMD(*shadingFunction)(const InterpolationResult& t, const ShaderInput& input);
 	VertexFunctions::VertexShaderResult(*vertexFunctions)(const Vertex& v, const ShaderInput& input);
 
 	ShaderInput shaderInput;
