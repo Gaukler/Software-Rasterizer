@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "DirectoryUtils.h"
 
 namespace DirectoryUtils {
