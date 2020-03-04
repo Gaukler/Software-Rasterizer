@@ -53,6 +53,30 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 		bStart_arr[2] = edgeFunction(v1, edgeVectors[1], startPoint);
 		bStart_arr[0] = edgeFunction(v2, edgeVectors[2], startPoint);
 
+		//writes four pixels using SIMD register inputs
+		//returns true if all pixels were in triangle
+		//no captures as they are slower by a few ms
+		auto writeFragments = [](__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], float area, const RenderSettings& settings, RenderTarget& target, const Triangle& t) {
+			union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
+			union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
+			union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
+
+			__m128 areaReg = _mm_set1_ps(area);
+			bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
+			bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
+			bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
+
+			InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
+			ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
+			union { __m128i valid; int valid_arr[4]; };
+			valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
+			union { __m128i depth; int depth_arr[4]; };
+			depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
+
+			target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
+			return valid_arr[0] && valid_arr[1] && valid_arr[2];
+		};
+
 		int minY = std::min(std::min(v0.y, v1.y), v2.y);
 		for (int y = startPoint.y; y >= minY; y--) {
 			//if we landed on a invalid point we left the triangle -> search for new start point
@@ -106,27 +130,10 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			bool inTriangle = true;
 			while(inTriangle){
 
-				union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
-				union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
-				union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
-
-				__m128 areaReg = _mm_set1_ps(area);
-				bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
-				bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
-				bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
-
-				InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
-				ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
-				union { __m128i valid; int valid_arr[4]; };
-				valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
-				union {__m128i depth; int depth_arr[4];};
-				depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
-
 				union { __m128i xCo; int xCo_arr[4]; };
 				xCo = _mm_add_epi32(_mm_set1_epi32(p.x), lane);
 
-				target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
-				inTriangle = valid_arr[0] && valid_arr[1] && valid_arr[2];
+				inTriangle = writeFragments(bX, bY, bZ, p.y, xCo_arr, area, settings, target, t);
 
 				bY = _mm_add_epi32(bY, edge0Y_x4);
 				bZ = _mm_add_epi32(bZ, edge1Y_x4);
@@ -151,28 +158,10 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 			inTriangle = true;
 			while (inTriangle) {
 
-				union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
-				union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
-				union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
-
-				__m128 areaReg = _mm_set1_ps(area);
-				bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
-				bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
-				bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
-
-				InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
-				ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
-
-				union { __m128i valid; int valid_arr[4]; };
-				valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
-				union { __m128i depth; int depth_arr[4]; };
-				depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
-
 				union { __m128i xCo; int xCo_arr[4]; };
 				xCo = _mm_sub_epi32(_mm_set1_epi32(p.x), lane);
 
-				target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
-				inTriangle = valid_arr[0] && valid_arr[1] && valid_arr[2];
+				inTriangle = writeFragments(bX, bY, bZ, p.y, xCo_arr, area, settings, target, t);
 
 				bY = _mm_sub_epi32(bY, edge0Y_x4);
 				bZ = _mm_sub_epi32(bZ, edge1Y_x4);
