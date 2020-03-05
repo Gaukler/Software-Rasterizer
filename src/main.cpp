@@ -38,7 +38,7 @@ int main() {
 	const ShaderInput shaderInput(texture, lightPosition, projectionMatrix, viewMatrix);
 	const RenderSettings settings(ShadingFunctions::texturedLit, VertexFunctions::viewProjection, shaderInput);
 
-	const bool benchmarkRun = false;
+	const bool benchmarkRun = true;
 	if (benchmarkRun) {
 		benchmark(mesh, settings, renderTarget);
 	}

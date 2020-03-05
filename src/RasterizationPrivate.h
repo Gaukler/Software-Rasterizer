@@ -13,6 +13,7 @@ struct BoundingBox2DInt {
 };
 
 void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, const RenderSettings& settings);
+void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& settings, const Triangle& t, const cml::ivec2 bbMin, cml::ivec2 bbMax);
 
 std::vector<Triangle> clipTriangles(std::vector<Triangle> in);
 std::vector<Vertex> clipLineAgainsAxisAlignedLine(const std::vector<Vertex>& vertices, const int& clipCoordinate, const float clipLimit, const bool& lowerLimit);

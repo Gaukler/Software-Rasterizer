@@ -6,11 +6,8 @@
 #include "ColorSIMD.h"
 
 namespace ShadingFunctions {
-	cml::vec3 normalVis(const Vertex& v, const ShaderInput& input);
-	cml::vec3 positionVis(const Vertex& v, const ShaderInput& input);
-	cml::vec3 uvVis(const Vertex& v, const ShaderInput& input);
-	cml::vec3 depthVis(const Vertex& v, const ShaderInput& input);
-	cml::vec3 frontLight(const Vertex& v, const ShaderInput& input);
-	cml::vec3 texture(const Vertex& v, const ShaderInput& input);
+	ColorSIMD normalVis(const InterpolationResult& v, const ShaderInput& input);
+	ColorSIMD depthVis(const InterpolationResult& v, const ShaderInput& input);
+	ColorSIMD texture(const InterpolationResult& v, const ShaderInput& input);
 	ColorSIMD texturedLit(const InterpolationResult& v, const ShaderInput& input);
 }

@@ -9,172 +9,301 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 	//every row is rasterizesd by going left and right until running out of the triangle
 	//row traversal processes four pixels at a time, using SIMD
 	//when going down if the line goes out of the triangle the triangle has to be searched to reposition the central line
+
+	//transform triangles to NDC
+	std::vector<std::array<cml::ivec2, 3>> triangleNDC;
+	triangleNDC.reserve(triangles.size());
+
 	for (const auto& t : triangles) {
+		std::array<cml::ivec2, 3> NDC = {
+			coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
+			coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
+			coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()) };
+		triangleNDC.push_back(NDC);
+	}
 
-		const cml::ivec2 v0 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		const cml::ivec2 v1 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-		const cml::ivec2 v2 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+	//store triangle indices per tile
+	cml::ivec2 tileSize = cml::ivec2(32);
+	cml::ivec2 targetResRounded = cml::ivec2(target.getWidth(), target.getHeight());
+	targetResRounded.x += tileSize.x - targetResRounded.x % tileSize.x;
+	targetResRounded.y += tileSize.y - targetResRounded.y % tileSize.y;
 
-		const cml::ivec2 edgeVectors[3] = {
-			v0 - v2,
-			v1 - v0,
-			v2 - v1
-		};
+	size_t tileRowSize = targetResRounded.x / tileSize.x;
+	size_t tileColumnSize = targetResRounded.y / tileSize.y;
 
-		int minX = std::min(std::min(v0.x, v1.x), v2.x);
-		int maxX = std::max(std::max(v0.x, v1.x), v2.x);
-		int xExtent = maxX - minX;
+	assert(targetResRounded.x % tileRowSize == 0);
+	assert(targetResRounded.y % tileColumnSize == 0);
 
-		float area = (float)edgeFunction(v0, edgeVectors[0], v1);
-		//skip triangles without surface + backface culling
-		if (area >= 0.f) {
-			continue;
+	size_t nTiles = tileRowSize * tileColumnSize;
+	std::vector<std::vector<size_t>> tileTriangleList;
+	tileTriangleList.resize(nTiles);
+
+	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
+		std::array<cml::ivec2, 3> NDC = triangleNDC[iTriangle];
+		BoundingBox2DInt triangleBB(
+			cml::ivec2(std::min(std::min(NDC[0].x, NDC[1].x), NDC[2].x), std::min(std::min(NDC[0].y, NDC[1].y), NDC[2].y)),
+			cml::ivec2(std::max(std::max(NDC[0].x, NDC[1].x), NDC[2].x), std::max(std::max(NDC[0].y, NDC[1].y), NDC[2].y))
+		);
+
+		//round to tile sizes
+		triangleBB.min.x -= triangleBB.min.x % tileSize.x;
+		triangleBB.min.y -= triangleBB.min.y % tileSize.y;
+
+		triangleBB.max.x += triangleBB.max.x % tileSize.x;
+		triangleBB.max.y += triangleBB.max.y % tileSize.y;
+
+		//write indices to tiles
+		for (size_t x = triangleBB.min.x; x < triangleBB.max.x; x += tileSize.x) {
+			for (size_t y = triangleBB.min.y; y < triangleBB.max.y; y += tileSize.y) {
+				cml::ivec2 tileCo = cml::ivec2(x / tileSize.x, y / tileSize.y);
+				size_t tileIndex = tileRowSize * tileCo.y + tileCo.x;
+				tileTriangleList[tileIndex].push_back(iTriangle);
+			}
 		}
+	}
 
-		__m128i edge0Y = _mm_set1_epi32(edgeVectors[0].y);
-		__m128i edge1Y = _mm_set1_epi32(edgeVectors[1].y);
-		__m128i edge2Y = _mm_set1_epi32(edgeVectors[2].y);
+	//tiles are assigned to threads in an alternating fashion
+	//threads are started after task lists are complete
+	//avoids mutex, at the cost of dynamic thread allocation
+	//slightly faster than threadpool
+	const unsigned int nThreads = std::thread::hardware_concurrency();
+	std::vector<std::vector<size_t>> tileIndicesPerThread;
+	std::vector<size_t> trianglePerThread;
 
-		//all edges in one register, used for search
-		__m128i edgesX = _mm_setr_epi32(edgeVectors[2].x, edgeVectors[0].x, edgeVectors[1].x, 0);
-		__m128i edgesY = _mm_setr_epi32(edgeVectors[2].y, edgeVectors[0].y, edgeVectors[1].y, 0);
+	tileIndicesPerThread.resize(nThreads);
+	trianglePerThread.resize(nThreads);
 
-		cml::ivec2 startPoint;
-		if (v0.y >= v1.y && v0.y >= v2.y) startPoint = v0;
-		else if (v1.y >= v2.y) startPoint = v1;
-		else startPoint = v2;
 
-		assert(startPoint.y >= v0.y);
-		assert(startPoint.y >= v1.y);
-		assert(startPoint.y >= v2.y);
+	/*size_t currentThread = 0;
+	for (uint32_t tileY = 0; tileY < tileColumnSize; tileY++) {
+		for (uint32_t tileX = 0; tileX < tileRowSize; tileX++) {
+			size_t tileIndex = tileIndexFromXY(tileX, tileY);
+			tileIndicesPerThread[currentThread].push_back(tileIndex);
 
-		union { __m128i bStart; int bStart_arr[4]; };
-		bStart_arr[1] = edgeFunction(v0, edgeVectors[0], startPoint);
-		bStart_arr[2] = edgeFunction(v1, edgeVectors[1], startPoint);
-		bStart_arr[0] = edgeFunction(v2, edgeVectors[2], startPoint);
+			currentThread++;
+			currentThread = currentThread % nThreads;
+		}
+	}*/
 
-		//writes four pixels using SIMD register inputs
-		//returns true if all pixels were in triangle
-		//no captures as they are slower by a few ms
-		auto writeFragments = [](__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], float area, const RenderSettings& settings, RenderTarget& target, const Triangle& t) {
-			union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
-			union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
-			union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
+	//try to balance load between threads
+	for (size_t tileIndex = 0; tileIndex < nTiles; tileIndex++) {
+		int minNTriangles = trianglePerThread[0];
+		int threadIndexWithLeastTriangles = 0;
+		for (size_t threadIndex = 1; threadIndex < nThreads; threadIndex++) {
+			if (trianglePerThread[threadIndex] < minNTriangles) {
+				minNTriangles = trianglePerThread[threadIndex];
+				threadIndexWithLeastTriangles = threadIndex;
+			}
+		}
+		tileIndicesPerThread[threadIndexWithLeastTriangles].push_back(tileIndex);
+		trianglePerThread[threadIndexWithLeastTriangles] += tileTriangleList[tileIndex].size();
+	}
 
-			__m128 areaReg = _mm_set1_ps(area);
-			bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
-			bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
-			bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
+	//create threads
+	std::vector<std::thread> threads;
+	threads.resize(nThreads);
 
-			InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
-			ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
-			union { __m128i valid; int valid_arr[4]; };
-			valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
-			union { __m128i depth; int depth_arr[4]; };
-			depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
+	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+		threads[threadIndex] = std::thread([](RenderTarget& target, const RenderSettings& settings, const size_t threadIndex, 
+			const std::vector<std::vector<size_t>> tileTriangleList, const std::vector<Triangle>& triangles, 
+			const size_t tileRowSize, const size_t tileColumnSize, const cml::ivec2 tileSize, const std::vector<std::vector<size_t>>& tileIndicesPerThread) {
+				for(const size_t tileIndex : tileIndicesPerThread[threadIndex])
+					for (const size_t triangleIndex : tileTriangleList[tileIndex]) {
+						const Triangle& t = triangles[triangleIndex];
 
-			target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
-			return valid_arr[0] && valid_arr[1] && valid_arr[2];
-		};
+						cml::ivec2 bbMin;
+						bbMin.x = tileIndex % tileRowSize;
+						bbMin.y = tileIndex / tileRowSize;
 
-		int minY = std::min(std::min(v0.y, v1.y), v2.y);
-		for (int y = startPoint.y; y >= minY; y--) {
-			//if we landed on a invalid point we left the triangle -> search for new start point
-			//in this case only one pixel is processed at a time, with the barycentric vector being SIMDed
-			//this is because most of the time only the first pixel to the left and right is tested
-			if (!(isBarycentricVaildSingleSIMD(bStart))) {
-				__m128i bRight = bStart;
-				__m128i bLeft  = bStart;
-				//some thin triangles don't have a valid pixel, because of undersampling, only search in radius of extent
-				for (int xOffset = 1; xOffset < xExtent; xOffset++) {
-					//check right
-					bRight = _mm_add_epi32(bRight, edgesY);
-					if (isBarycentricVaildSingleSIMD(bRight)) {
-						startPoint.x += xOffset;
-						bStart = bRight;
-						break;
+						bbMin.x *= tileSize.x;
+						bbMin.y *= tileSize.y;
+
+						cml::ivec2 bbMax = bbMin + tileSize -cml::ivec2(1);
+
+						rasterizeTriangleInBoundingBox(target, settings, t, bbMin, bbMax);
 					}
-					//check left
-					bLeft = _mm_sub_epi32(bLeft, edgesY);
-					if (isBarycentricVaildSingleSIMD(bLeft)) {
-						startPoint.x -= xOffset;
-						bStart = bLeft;
-						break;
-					}
+		}, std::ref(target), std::ref(settings), threadIndex, std::ref(tileTriangleList), std::ref(triangles), tileRowSize, tileColumnSize, tileSize, std::ref(tileIndicesPerThread));
+	}
+
+	//wait until work is finished
+	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+		threads[threadIndex].join();
+	}
+}
+
+void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& settings, const Triangle& t, const cml::ivec2 bbMin, cml::ivec2 bbMax) {
+	const cml::ivec2 v0 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+	const cml::ivec2 v1 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+	const cml::ivec2 v2 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+
+	const cml::ivec2 edgeVectors[3] = {
+		v0 - v2,
+		v1 - v0,
+		v2 - v1
+	};
+
+	int minX = std::min(bbMin.x, std::min(std::min(v0.x, v1.x), v2.x));
+	int maxX = std::max(bbMax.x, std::max(std::max(v0.x, v1.x), v2.x));
+	int xExtent = maxX - minX;
+
+	float area = (float)edgeFunction(v0, edgeVectors[0], v1);
+	//skip triangles without surface + backface culling
+	if (area >= 0.f) {
+		return;
+	}
+
+	__m128i edge0Y = _mm_set1_epi32(edgeVectors[0].y);
+	__m128i edge1Y = _mm_set1_epi32(edgeVectors[1].y);
+	__m128i edge2Y = _mm_set1_epi32(edgeVectors[2].y);
+
+	//all edges in one register, used for search
+	__m128i edgesX = _mm_setr_epi32(edgeVectors[2].x, edgeVectors[0].x, edgeVectors[1].x, 0);
+	__m128i edgesY = _mm_setr_epi32(edgeVectors[2].y, edgeVectors[0].y, edgeVectors[1].y, 0);
+
+	cml::ivec2 startPoint;
+	if (v0.y >= v1.y && v0.y >= v2.y) startPoint = v0;
+	else if (v1.y >= v2.y) startPoint = v1;
+	else startPoint = v2;
+
+	startPoint.x = std::max(bbMin.x, std::min(startPoint.y, bbMax.x));
+	startPoint.y = std::min(startPoint.y, bbMax.y);
+
+	union { __m128i bStart; int bStart_arr[4]; };
+	bStart_arr[1] = edgeFunction(v0, edgeVectors[0], startPoint);
+	bStart_arr[2] = edgeFunction(v1, edgeVectors[1], startPoint);
+	bStart_arr[0] = edgeFunction(v2, edgeVectors[2], startPoint);
+
+	//writes four pixels using SIMD register inputs
+	//returns true if all pixels were in triangle
+	//no captures as they are slower by a few ms
+	auto writeFragments = [](__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], float area, const RenderSettings& settings, RenderTarget& target, 
+		const Triangle& t, const cml::ivec2 bbMin, const cml::ivec2 bbMax, __m128i xCo) {
+		union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
+		union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
+		union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
+
+		__m128 areaReg = _mm_set1_ps(area);
+		bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
+		bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
+		bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
+
+		InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
+		ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
+		union { __m128i valid; int valid_arr[4]; };
+		valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
+
+		__m128i xMin = _mm_set1_epi32(bbMin.x - 1); //SSE only provides greather than, not greater equal
+		__m128i xMax = _mm_set1_epi32(bbMax.x + 1);
+
+		valid = _mm_and_si128(valid, _mm_cmpgt_epi32(xCo, xMin));
+		valid = _mm_and_si128(valid, _mm_cmplt_epi32(xCo, xMax));
+
+		union { __m128i depth; int depth_arr[4]; };
+		depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
+
+		target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
+
+		//valid = isBarycentricValidMultipleSIMD(bX, bY, bZ); //fixes problem, but why?
+		return valid_arr[0] && valid_arr[1] && valid_arr[2];
+	};
+
+	int minY = std::max(bbMin.y, std::min(std::min(v0.y, v1.y), v2.y));
+	for (int y = startPoint.y; y >= minY; y--) {
+		//if we landed on a invalid point we left the triangle -> search for new start point
+		//in this case only one pixel is processed at a time, with the barycentric vector being SIMDed
+		//this is because most of the time only the first pixel to the left and right is tested
+		if (!(isBarycentricVaildSingleSIMD(bStart))) {
+			__m128i bRight = bStart;
+			__m128i bLeft = bStart;
+			//some thin triangles don't have a valid pixel, because of undersampling, only search in radius of extent
+			for (int xOffset = 1; xOffset < xExtent; xOffset++) {
+				//check right
+				bRight = _mm_add_epi32(bRight, edgesY);
+				if (isBarycentricVaildSingleSIMD(bRight) && startPoint.x + xOffset <= bbMax.x) {
+					startPoint.x += xOffset;
+					bStart = bRight;
+					break;
+				}
+				//check left
+				bLeft = _mm_sub_epi32(bLeft, edgesY);
+				if (isBarycentricVaildSingleSIMD(bLeft) && startPoint.x - xOffset >= bbMin.x) {
+					startPoint.x -= xOffset;
+					bStart = bLeft;
+					break;
 				}
 			}
-
-			//set point to start point
-			cml::ivec2 p = startPoint;
-
-			union { __m128i bX; int bXArr[4]; };
-			union { __m128i bY; int bYArr[4]; };
-			union { __m128i bZ; int bZArr[4]; };
-
-			bX = _mm_set1_epi32(bStart_arr[0]);
-			bY = _mm_set1_epi32(bStart_arr[1]);
-			bZ = _mm_set1_epi32(bStart_arr[2]);
-
-			__m128i lane = _mm_setr_epi32(0, 1, 2, 3);
-
-			bY = _mm_add_epi32(bY, _mm_mullo_epi32(edge0Y, lane));
-			bZ = _mm_add_epi32(bZ, _mm_mullo_epi32(edge1Y, lane));
-			bX = _mm_add_epi32(bX, _mm_mullo_epi32(edge2Y, lane));
-
-			__m128i four = _mm_set1_epi32(4);
-			__m128i edge0Y_x4 = _mm_mullo_epi32(edge0Y, four);
-			__m128i edge1Y_x4 = _mm_mullo_epi32(edge1Y, four);
-			__m128i edge2Y_x4 = _mm_mullo_epi32(edge2Y, four);
-
-			//go right
-			bool inTriangle = true;
-			while(inTriangle){
-
-				union { __m128i xCo; int xCo_arr[4]; };
-				xCo = _mm_add_epi32(_mm_set1_epi32(p.x), lane);
-
-				inTriangle = writeFragments(bX, bY, bZ, p.y, xCo_arr, area, settings, target, t);
-
-				bY = _mm_add_epi32(bY, edge0Y_x4);
-				bZ = _mm_add_epi32(bZ, edge1Y_x4);
-				bX = _mm_add_epi32(bX, edge2Y_x4);
-
-				p.x += 4;
-			}
-			//set point to start point
-			p = startPoint;
-			//already checked start point
-			p.x--;
-
-			bY = _mm_set1_epi32(bStart_arr[1] - edgeVectors[0].y);
-			bZ = _mm_set1_epi32(bStart_arr[2] - edgeVectors[1].y);
-			bX = _mm_set1_epi32(bStart_arr[0] - edgeVectors[2].y);
-
-			bY = _mm_sub_epi32(bY, _mm_mullo_epi32(edge0Y, lane));
-			bZ = _mm_sub_epi32(bZ, _mm_mullo_epi32(edge1Y, lane));
-			bX = _mm_sub_epi32(bX, _mm_mullo_epi32(edge2Y, lane));
-			
-			//go left
-			inTriangle = true;
-			while (inTriangle) {
-
-				union { __m128i xCo; int xCo_arr[4]; };
-				xCo = _mm_sub_epi32(_mm_set1_epi32(p.x), lane);
-
-				inTriangle = writeFragments(bX, bY, bZ, p.y, xCo_arr, area, settings, target, t);
-
-				bY = _mm_sub_epi32(bY, edge0Y_x4);
-				bZ = _mm_sub_epi32(bZ, edge1Y_x4);
-				bX = _mm_sub_epi32(bX, edge2Y_x4);
-
-				p.x -= 4;
-			}
-
-			//decrement start point y
-			startPoint.y--;
-			//adjust start point barycentric
-			bStart = _mm_add_epi32(bStart, edgesX);
 		}
+
+		//set point to start point
+		cml::ivec2 p = startPoint;
+
+		union { __m128i bX; int bXArr[4]; };
+		union { __m128i bY; int bYArr[4]; };
+		union { __m128i bZ; int bZArr[4]; };
+
+		bX = _mm_set1_epi32(bStart_arr[0]);
+		bY = _mm_set1_epi32(bStart_arr[1]);
+		bZ = _mm_set1_epi32(bStart_arr[2]);
+
+		__m128i lane = _mm_setr_epi32(0, 1, 2, 3);
+
+		bY = _mm_add_epi32(bY, _mm_mullo_epi32(edge0Y, lane));
+		bZ = _mm_add_epi32(bZ, _mm_mullo_epi32(edge1Y, lane));
+		bX = _mm_add_epi32(bX, _mm_mullo_epi32(edge2Y, lane));
+
+		__m128i four = _mm_set1_epi32(4);
+		__m128i edge0Y_x4 = _mm_mullo_epi32(edge0Y, four);
+		__m128i edge1Y_x4 = _mm_mullo_epi32(edge1Y, four);
+		__m128i edge2Y_x4 = _mm_mullo_epi32(edge2Y, four);
+
+		//go right
+		bool inTriangle = true;
+		while (inTriangle) {
+
+			union { __m128i xCo; int xCo_arr[4]; };
+			xCo = _mm_add_epi32(_mm_set1_epi32(p.x), lane);
+
+			inTriangle = writeFragments(bX, bY, bZ, p.y, xCo_arr, area, settings, target, t, bbMin, bbMax, xCo);
+
+			bY = _mm_add_epi32(bY, edge0Y_x4);
+			bZ = _mm_add_epi32(bZ, edge1Y_x4);
+			bX = _mm_add_epi32(bX, edge2Y_x4);
+
+			p.x += 4;
+		}
+		//set point to start point
+		p = startPoint;
+		//already checked start point
+		p.x--;
+
+		bY = _mm_set1_epi32(bStart_arr[1] - edgeVectors[0].y);
+		bZ = _mm_set1_epi32(bStart_arr[2] - edgeVectors[1].y);
+		bX = _mm_set1_epi32(bStart_arr[0] - edgeVectors[2].y);
+
+		bY = _mm_sub_epi32(bY, _mm_mullo_epi32(edge0Y, lane));
+		bZ = _mm_sub_epi32(bZ, _mm_mullo_epi32(edge1Y, lane));
+		bX = _mm_sub_epi32(bX, _mm_mullo_epi32(edge2Y, lane));
+
+		//go left
+		inTriangle = true;
+		while (inTriangle) {
+
+			union { __m128i xCo; int xCo_arr[4]; };
+			xCo = _mm_sub_epi32(_mm_set1_epi32(p.x), lane);
+
+			inTriangle = writeFragments(bX, bY, bZ, p.y, xCo_arr, area, settings, target, t, bbMin, bbMax, xCo);
+
+			bY = _mm_sub_epi32(bY, edge0Y_x4);
+			bZ = _mm_sub_epi32(bZ, edge1Y_x4);
+			bX = _mm_sub_epi32(bX, edge2Y_x4);
+
+			p.x -= 4;
+		}
+
+		//decrement start point y
+		startPoint.y--;
+		//adjust start point barycentric
+		bStart = _mm_add_epi32(bStart, edgesX);
 	}
 }
 

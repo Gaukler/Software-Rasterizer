@@ -8,28 +8,24 @@ namespace ShadingFunctions {
 	#pragma warning(disable: 4100)
 	#endif
 
-	cml::vec3 normalVis(const Vertex& v, const ShaderInput& input) {
-		return cml::normalize(v.normal);
+	ColorSIMD normalVis(const InterpolationResult& v, const ShaderInput& input) {
+		ColorSIMD out;
+		out.r = v.normalX;
+		out.g = v.normalY;
+		out.b = v.normalZ;
+		return out;
 	}
 
-	cml::vec3 positionVis(const Vertex& v, const ShaderInput& input) {
-		return v.position;
+	ColorSIMD depthVis(const InterpolationResult& v, const ShaderInput& input) {
+		ColorSIMD out;
+		out.r = v.posZ;
+		out.g = v.posZ;
+		out.b = v.posZ;
+		return out;
 	}
 
-	cml::vec3 uvVis(const Vertex& v, const ShaderInput& input) {
-		return cml::vec3(v.uv.x, v.uv.y, 0.f);
-	}
-
-	cml::vec3 depthVis(const Vertex& v, const ShaderInput& input) {
-		return cml::vec3(v.position.z);
-	}
-
-	cml::vec3 frontLight(const Vertex& v, const ShaderInput& input) {
-		return cml::dot(cml::normalize(v.normal), cml::normalize(cml::vec3(1.f, 1.f, 1.f)));
-	}
-
-	cml::vec3 texture(const Vertex& v, const ShaderInput& input) {
-		return input.texture->sample(v.uv);
+	ColorSIMD texture(const InterpolationResult& v, const ShaderInput& input){
+		return input.texture->sampleSIMD(v.uvX, v.uvY);
 	}
 
 	ColorSIMD texturedLit(const InterpolationResult& v, const ShaderInput& input) {
