@@ -15,7 +15,7 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 	triangleNDC.reserve(triangles.size());
 
 	for (const auto& t : triangles) {
-		std::array<cml::ivec2, 3> NDC = {
+		const std::array<cml::ivec2, 3> NDC = {
 			coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
 			coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()),
 			coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight()) };
@@ -23,18 +23,18 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 	}
 
 	//store triangle indices per tile
-	cml::ivec2 tileSize = cml::ivec2(32);
+	const cml::ivec2 tileSize = cml::ivec2(32);
 	cml::ivec2 targetResRounded = cml::ivec2(target.getWidth(), target.getHeight());
 	targetResRounded.x += tileSize.x - targetResRounded.x % tileSize.x;
 	targetResRounded.y += tileSize.y - targetResRounded.y % tileSize.y;
 
-	size_t tileRowSize = targetResRounded.x / tileSize.x;
-	size_t tileColumnSize = targetResRounded.y / tileSize.y;
+	const size_t tileRowSize = targetResRounded.x / tileSize.x;
+	const size_t tileColumnSize = targetResRounded.y / tileSize.y;
 
 	assert(targetResRounded.x % tileRowSize == 0);
 	assert(targetResRounded.y % tileColumnSize == 0);
 
-	size_t nTiles = tileRowSize * tileColumnSize;
+	const size_t nTiles = tileRowSize * tileColumnSize;
 	std::vector<std::vector<size_t>> tileTriangleList;
 	tileTriangleList.resize(nTiles);
 
@@ -62,18 +62,12 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 		}
 	}
 
-	//tiles are assigned to threads in an alternating fashion
-	//threads are started after task lists are complete
-	//avoids mutex, at the cost of dynamic thread allocation
-	//slightly faster than threadpool
+	//assign tiles to threads
 	const unsigned int nThreads = std::thread::hardware_concurrency();
 	std::vector<std::vector<size_t>> tileIndicesPerThread;
-	std::vector<size_t> trianglePerThread;
-
 	tileIndicesPerThread.resize(nThreads);
-	trianglePerThread.resize(nThreads);
 
-
+	//try to balance thread workload by always adding tile to thread with least triangles
 	size_t currentThread = 0;
 	for (uint32_t tileY = 0; tileY < tileColumnSize; tileY++) {
 		for (uint32_t tileX = 0; tileX < tileRowSize; tileX++) {
