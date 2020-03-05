@@ -29,15 +29,23 @@ namespace ShadingFunctions {
 	}
 
 	ColorSIMD texturedLit(const InterpolationResult& v, const ShaderInput& input) {
-		cml::vec3 light = cml::normalize(input.lightPosition);
+		__m128 lightPosX = _mm_set1_ps(input.lightPosition.x);
+		__m128 lightPosY = _mm_set1_ps(input.lightPosition.x);
+		__m128 lightPosZ = _mm_set1_ps(input.lightPosition.x);
 
-		__m128 lx = _mm_set1_ps(light.x);
-		__m128 ly = _mm_set1_ps(light.y);
-		__m128 lz = _mm_set1_ps(light.z);
+		__m128 toLightX = _mm_sub_ps(lightPosX, v.posX);
+		__m128 toLightY = _mm_sub_ps(lightPosY, v.posY);
+		__m128 toLightZ = _mm_sub_ps(lightPosZ, v.posZ);
 
-		__m128 dot = _mm_mul_ps(lx, v.normalX);
-		dot = _mm_add_ps(dot, _mm_mul_ps(ly, v.normalY));
-		dot = _mm_add_ps(dot, _mm_mul_ps(lz, v.normalZ));
+		__m128 lightLength = _mm_sqrt_ps(_mm_add_ps(_mm_mul_ps(toLightX, toLightX), _mm_add_ps(_mm_mul_ps(toLightY, toLightY), _mm_mul_ps(toLightZ, toLightZ))));
+
+		toLightX = _mm_div_ps(toLightX, lightLength);
+		toLightY = _mm_div_ps(toLightY, lightLength);
+		toLightZ = _mm_div_ps(toLightZ, lightLength);
+
+		__m128 dot = _mm_mul_ps(toLightX, v.normalX);
+		dot = _mm_add_ps(dot, _mm_mul_ps(toLightY, v.normalY));
+		dot = _mm_add_ps(dot, _mm_mul_ps(toLightZ, v.normalZ));
 		__m128 min = _mm_set1_ps(0.2f);
 		dot = _mm_max_ps(dot, min);
 
