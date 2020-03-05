@@ -108,14 +108,6 @@ ColorSIMD RGBImage::sampleSIMD(__m128 uvX, __m128 uvY) {
 	floorX = _mm_cvtps_epi32(_mm_floor_ps(rasterX));
 	floorY = _mm_cvtps_epi32(_mm_floor_ps(rasterY));
 
-	//ceil
-	union { __m128i ceilX; int ceilX_arr[4]; };
-	union { __m128i ceilY; int ceilY_arr[4]; };
-
-	__m128i oneI = _mm_set1_epi32(1);
-	ceilX = _mm_add_epi32(floorX, oneI);
-	ceilY = _mm_add_epi32(floorY, oneI);
-
 	//t
 	__m128 tX = _mm_sub_ps(rasterX, _mm_cvtepi32_ps(floorX));
 	__m128 tY = _mm_sub_ps(rasterY, _mm_cvtepi32_ps(floorY));
@@ -146,10 +138,10 @@ ColorSIMD RGBImage::sampleSIMD(__m128 uvX, __m128 uvY) {
 
 	//load into registers
 	for (int lane = 0; lane < 4; lane++) {
-		cml::vec3 ul = (*this)[(size_t)ceilY_arr[lane]][(size_t)floorX_arr[lane]];
-		cml::vec3 ur = (*this)[(size_t)ceilY_arr[lane]][(size_t)ceilX_arr[lane]];
+		cml::vec3 ul = (*this)[(size_t)floorY_arr[lane]+1][(size_t)floorX_arr[lane]];
+		cml::vec3 ur = (*this)[(size_t)floorY_arr[lane]+1][(size_t)floorX_arr[lane]+1];
 		cml::vec3 ll = (*this)[(size_t)floorY_arr[lane]][(size_t)floorX_arr[lane]];
-		cml::vec3 lr = (*this)[(size_t)floorY_arr[lane]][(size_t)ceilX_arr[lane]];
+		cml::vec3 lr = (*this)[(size_t)floorY_arr[lane]][(size_t)floorX_arr[lane]+1];
 
 		ulR_arr[lane] = ul.x;
 		urR_arr[lane] = ur.x;
