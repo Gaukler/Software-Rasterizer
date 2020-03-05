@@ -74,29 +74,15 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 	trianglePerThread.resize(nThreads);
 
 
-	/*size_t currentThread = 0;
+	size_t currentThread = 0;
 	for (uint32_t tileY = 0; tileY < tileColumnSize; tileY++) {
 		for (uint32_t tileX = 0; tileX < tileRowSize; tileX++) {
-			size_t tileIndex = tileIndexFromXY(tileX, tileY);
+			size_t tileIndex = tileRowSize * tileY + tileX;
 			tileIndicesPerThread[currentThread].push_back(tileIndex);
 
 			currentThread++;
 			currentThread = currentThread % nThreads;
 		}
-	}*/
-
-	//try to balance load between threads
-	for (size_t tileIndex = 0; tileIndex < nTiles; tileIndex++) {
-		int minNTriangles = trianglePerThread[0];
-		int threadIndexWithLeastTriangles = 0;
-		for (size_t threadIndex = 1; threadIndex < nThreads; threadIndex++) {
-			if (trianglePerThread[threadIndex] < minNTriangles) {
-				minNTriangles = trianglePerThread[threadIndex];
-				threadIndexWithLeastTriangles = threadIndex;
-			}
-		}
-		tileIndicesPerThread[threadIndexWithLeastTriangles].push_back(tileIndex);
-		trianglePerThread[threadIndexWithLeastTriangles] += tileTriangleList[tileIndex].size();
 	}
 
 	//create threads
