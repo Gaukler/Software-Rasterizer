@@ -92,7 +92,7 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
 		threads[threadIndex] = std::thread([](RenderTarget& target, const RenderSettings& settings, const size_t threadIndex, 
 			const std::vector<std::vector<size_t>> tileTriangleList, const std::vector<Triangle>& triangles, 
-			const size_t tileRowSize, const size_t tileColumnSize, const cml::ivec2 tileSize, const std::vector<std::vector<size_t>>& tileIndicesPerThread) {
+			const size_t tileRowSize, const size_t tileColumnSize, const cml::ivec2 tileSize, const std::vector<std::vector<size_t>>& tileIndicesPerThread, const std::vector<std::array<cml::ivec2, 3>>& NDC) {
 				for(const size_t tileIndex : tileIndicesPerThread[threadIndex])
 					for (const size_t triangleIndex : tileTriangleList[tileIndex]) {
 						const Triangle& t = triangles[triangleIndex];
@@ -106,9 +106,9 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 
 						cml::ivec2 bbMax = bbMin + tileSize -cml::ivec2(1);
 
-						rasterizeTriangleInBoundingBox(target, settings, t, bbMin, bbMax);
+						rasterizeTriangleInBoundingBox(target, settings, t, bbMin, bbMax, NDC[triangleIndex]);
 					}
-		}, std::ref(target), std::ref(settings), threadIndex, std::ref(tileTriangleList), std::ref(triangles), tileRowSize, tileColumnSize, tileSize, std::ref(tileIndicesPerThread));
+		}, std::ref(target), std::ref(settings), threadIndex, std::ref(tileTriangleList), std::ref(triangles), tileRowSize, tileColumnSize, tileSize, std::ref(tileIndicesPerThread), std::ref(triangleNDC));
 	}
 
 	//wait until work is finished
@@ -117,10 +117,10 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 	}
 }
 
-void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& settings, const Triangle& t, const cml::ivec2 bbMin, cml::ivec2 bbMax) {
-	const cml::ivec2 v0 = coordinateNDCtoRaster(t.v1.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-	const cml::ivec2 v1 = coordinateNDCtoRaster(t.v2.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
-	const cml::ivec2 v2 = coordinateNDCtoRaster(t.v3.position, (uint32_t)target.getWidth(), (uint32_t)target.getHeight());
+void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& settings, const Triangle& t, const cml::ivec2 bbMin, cml::ivec2 bbMax, const std::array<cml::ivec2, 3>& NDC) {
+	const cml::ivec2 v0 = NDC[0];
+	const cml::ivec2 v1 = NDC[1];
+	const cml::ivec2 v2 = NDC[2];
 
 	const cml::ivec2 edgeVectors[3] = {
 		v0 - v2,
