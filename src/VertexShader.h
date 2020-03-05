@@ -6,7 +6,7 @@
 
 namespace VertexFunctions {
 	struct VertexShaderResult {
-		float positionW;
+		float positionW = 0.f;
 		Vertex vertex;
 	};
 

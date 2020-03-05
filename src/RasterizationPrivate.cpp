@@ -24,19 +24,19 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 
 	//store triangle indices per tile
 	const cml::ivec2 tileSize = cml::ivec2(32);
-	cml::ivec2 targetResRounded = cml::ivec2(target.getWidth(), target.getHeight());
+	cml::ivec2 targetResRounded = cml::ivec2((int)target.getWidth(), (int)target.getHeight());
 	targetResRounded.x += tileSize.x - targetResRounded.x % tileSize.x;
 	targetResRounded.y += tileSize.y - targetResRounded.y % tileSize.y;
 
-	const size_t tileRowSize = targetResRounded.x / tileSize.x;
-	const size_t tileColumnSize = targetResRounded.y / tileSize.y;
+	const int tileRowSize = targetResRounded.x / tileSize.x;
+	const int tileColumnSize = targetResRounded.y / tileSize.y;
 
 	assert(targetResRounded.x % tileRowSize == 0);
 	assert(targetResRounded.y % tileColumnSize == 0);
 
-	const size_t nTiles = tileRowSize * tileColumnSize;
+	const int nTiles = tileRowSize * tileColumnSize;
 	std::vector<std::vector<size_t>> tileTriangleList;
-	tileTriangleList.resize(nTiles);
+	tileTriangleList.resize((size_t)nTiles);
 
 	for (size_t iTriangle = 0; iTriangle < triangles.size(); iTriangle++) {
 		std::array<cml::ivec2, 3> NDC = triangleNDC[iTriangle];
@@ -53,26 +53,26 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 		triangleBB.max.y += triangleBB.max.y % tileSize.y;
 
 		//write indices to tiles
-		for (size_t x = triangleBB.min.x; x < triangleBB.max.x; x += tileSize.x) {
-			for (size_t y = triangleBB.min.y; y < triangleBB.max.y; y += tileSize.y) {
+		for (int x = triangleBB.min.x; x < triangleBB.max.x; x += tileSize.x) {
+			for (int y = triangleBB.min.y; y < triangleBB.max.y; y += tileSize.y) {
 				cml::ivec2 tileCo = cml::ivec2(x / tileSize.x, y / tileSize.y);
-				size_t tileIndex = tileRowSize * tileCo.y + tileCo.x;
-				tileTriangleList[tileIndex].push_back(iTriangle);
+				int tileIndex = tileRowSize * tileCo.y + tileCo.x;
+				tileTriangleList[(size_t)tileIndex].push_back(iTriangle);
 			}
 		}
 	}
 
 	//assign tiles to threads
-	const unsigned int nThreads = std::thread::hardware_concurrency();
-	std::vector<std::vector<size_t>> tileIndicesPerThread;
-	tileIndicesPerThread.resize(nThreads);
+	const int nThreads = (int)std::thread::hardware_concurrency();
+	std::vector<std::vector<int>> tileIndicesPerThread;
+	tileIndicesPerThread.resize((size_t)nThreads);
 
 	//try to balance thread workload by always adding tile to thread with least triangles
-	size_t currentThread = 0;
-	for (uint32_t tileY = 0; tileY < tileColumnSize; tileY++) {
-		for (uint32_t tileX = 0; tileX < tileRowSize; tileX++) {
-			size_t tileIndex = tileRowSize * tileY + tileX;
-			tileIndicesPerThread[currentThread].push_back(tileIndex);
+	int currentThread = 0;
+	for (int32_t tileY = 0; tileY < tileColumnSize; tileY++) {
+		for (int32_t tileX = 0; tileX < tileRowSize; tileX++) {
+			int tileIndex = tileRowSize * tileY + tileX;
+			tileIndicesPerThread[(size_t)currentThread].push_back(tileIndex);
 
 			currentThread++;
 			currentThread = currentThread % nThreads;
@@ -81,14 +81,14 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 
 	//create threads
 	std::vector<std::thread> threads;
-	threads.resize(nThreads);
+	threads.resize((size_t)nThreads);
 
-	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
-		threads[threadIndex] = std::thread([](RenderTarget& target, const RenderSettings& settings, const size_t threadIndex, 
+	for (int threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+		threads[(size_t)threadIndex] = std::thread([](RenderTarget& target, const RenderSettings& settings, const int threadIndex, 
 			const std::vector<std::vector<size_t>> tileTriangleList, const std::vector<Triangle>& triangles, 
-			const size_t tileRowSize, const size_t tileColumnSize, const cml::ivec2 tileSize, const std::vector<std::vector<size_t>>& tileIndicesPerThread, const std::vector<std::array<cml::ivec2, 3>>& NDC) {
-				for(const size_t tileIndex : tileIndicesPerThread[threadIndex])
-					for (const size_t triangleIndex : tileTriangleList[tileIndex]) {
+			const int tileRowSize, const cml::ivec2 tileSize, const std::vector<std::vector<int>>& tileIndicesPerThread, const std::vector<std::array<cml::ivec2, 3>>& NDC) {
+				for(const int tileIndex : tileIndicesPerThread[(size_t)threadIndex])
+					for (const size_t triangleIndex : tileTriangleList[(size_t)tileIndex]) {
 						const Triangle& t = triangles[triangleIndex];
 
 						cml::ivec2 bbMin;
@@ -102,12 +102,12 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 
 						rasterizeTriangleInBoundingBox(target, settings, t, bbMin, bbMax, NDC[triangleIndex]);
 					}
-		}, std::ref(target), std::ref(settings), threadIndex, std::ref(tileTriangleList), std::ref(triangles), tileRowSize, tileColumnSize, tileSize, std::ref(tileIndicesPerThread), std::ref(triangleNDC));
+		}, std::ref(target), std::ref(settings), threadIndex, std::ref(tileTriangleList), std::ref(triangles), tileRowSize, tileSize, std::ref(tileIndicesPerThread), std::ref(triangleNDC));
 	}
 
 	//wait until work is finished
-	for (size_t threadIndex = 0; threadIndex < nThreads; threadIndex++) {
-		threads[threadIndex].join();
+	for (int threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+		threads[(size_t)threadIndex].join();
 	}
 }
 
@@ -467,10 +467,7 @@ InterpolationResult interpolateVertexDataSIMD(const Triangle& t, const __m128& b
 }
 
 Vertex interpolateVertexData(const Triangle& t, const cml::vec3 b) {
-	//res.position = t.v1.position * b.x + t.v2.position * b.y + t.v3.position * b.z;
-	//res.normal = t.v1.normal * b.x + t.v2.normal * b.y + t.v3.normal * b.z;
-	//res.uv = t.v1.uv * b.x + t.v2.uv * b.y + t.v3.uv * b.z;
-	//FIXME indexed access to triangle to replace duplicate code
+
 	const auto& p0 = t.v1.position;
 	const auto& n0 = t.v1.normal;
 	__m128 posReg0  = _mm_setr_ps(p0.x, p0.y, p0.z, t.v1.uv.x);
