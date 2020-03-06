@@ -124,7 +124,6 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 
 	int minX = std::min(bbMin.x, std::min(std::min(v0.x, v1.x), v2.x));
 	int maxX = std::max(bbMax.x, std::max(std::max(v0.x, v1.x), v2.x));
-	int xExtent = maxX - minX;
 
 	float area = (float)edgeFunction(v0, edgeVectors[0], v1);
 	//skip triangles without surface + backface culling
@@ -152,40 +151,6 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 	bStart_arr[1] = edgeFunction(v0, edgeVectors[0], startPoint);
 	bStart_arr[2] = edgeFunction(v1, edgeVectors[1], startPoint);
 	bStart_arr[0] = edgeFunction(v2, edgeVectors[2], startPoint);
-
-	//writes four pixels using SIMD register inputs
-	//returns true if all pixels were in triangle
-	//no captures as they are slower by a few ms
-	auto writeFragments = [](__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], float area, const RenderSettings& settings, RenderTarget& target, 
-		const Triangle& t, const cml::ivec2 bbMin, const cml::ivec2 bbMax, __m128i xCo) {
-		union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
-		union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
-		union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
-
-		__m128 areaReg = _mm_set1_ps(area);
-		bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
-		bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
-		bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
-
-		InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
-		ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
-		union { __m128i valid; int valid_arr[4]; };
-		valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
-
-		__m128i xMin = _mm_set1_epi32(bbMin.x - 1); //SSE only provides greather than, not greater equal
-		__m128i xMax = _mm_set1_epi32(bbMax.x + 1);
-
-		valid = _mm_and_si128(valid, _mm_cmpgt_epi32(xCo, xMin));
-		valid = _mm_and_si128(valid, _mm_cmplt_epi32(xCo, xMax));
-
-		union { __m128i depth; int depth_arr[4]; };
-		depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
-
-		target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
-
-		//valid = isBarycentricValidMultipleSIMD(bX, bY, bZ); //fixes problem, but why?
-		return valid_arr[0] && valid_arr[1] && valid_arr[2];
-	};
 
 	int minY = std::max(bbMin.y, std::min(std::min(v0.y, v1.y), v2.y));
 	for (int y = startPoint.y; y >= minY; y--) {
@@ -294,6 +259,37 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 		//adjust start point barycentric
 		bStart = _mm_add_epi32(bStart, edgesX);
 	}
+}
+
+bool writeFragments(__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], float area, const RenderSettings& settings, RenderTarget& target,
+	const Triangle& t, const cml::ivec2 bbMin, const cml::ivec2 bbMax, __m128i xCo) {
+
+	union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
+	union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
+	union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
+
+	__m128 areaReg = _mm_set1_ps(area);
+	bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
+	bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
+	bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
+
+	InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
+	ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);
+	union { __m128i valid; int valid_arr[4]; };
+	valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
+
+	__m128i xMin = _mm_set1_epi32(bbMin.x - 1); //SSE only provides greather than, not greater equal
+	__m128i xMax = _mm_set1_epi32(bbMax.x + 1);
+
+	valid = _mm_and_si128(valid, _mm_cmpgt_epi32(xCo, xMin));
+	valid = _mm_and_si128(valid, _mm_cmplt_epi32(xCo, xMax));
+
+	union { __m128i depth; int depth_arr[4]; };
+	depth = _mm_cvtps_epi32(_mm_mul_ps(v.posZ, _mm_set1_ps((float)-INT_MAX)));
+
+	target.writeDepthTestSIMD(xCo_arr, (size_t)y, colors, valid, depth_arr);
+
+	return valid_arr[0] && valid_arr[1] && valid_arr[2];
 }
 
 int edgeFunction(const cml::ivec2& v, const cml::ivec2& deltaV, const cml::ivec2& p) {
