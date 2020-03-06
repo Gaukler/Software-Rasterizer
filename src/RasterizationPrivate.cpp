@@ -278,7 +278,7 @@ bool writeFragments(__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4]
 	union { __m128i valid; int valid_arr[4]; };
 	valid = isBarycentricValidMultipleSIMD(bX, bY, bZ);
 
-	__m128i xMin = _mm_set1_epi32(bbMin.x - 1); //SSE only provides greather than, not greater equal
+	__m128i xMin = _mm_set1_epi32(bbMin.x - 1); //SSE only provides greather than, not greater equal for int
 	__m128i xMax = _mm_set1_epi32(bbMax.x + 1);
 
 	valid = _mm_and_si128(valid, _mm_cmpgt_epi32(xCo, xMin));
