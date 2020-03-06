@@ -189,29 +189,38 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 
 	int minY = std::max(bbMin.y, std::min(std::min(v0.y, v1.y), v2.y));
 	for (int y = startPoint.y; y >= minY; y--) {
-		//if we landed on a invalid point we left the triangle -> search for new start point
-		//in this case only one pixel is processed at a time, with the barycentric vector being SIMDed
-		//this is because most of the time only the first pixel to the left and right is tested
+		//if we landed on a invalid point we left the triangle
+		//compute new point
 		if (!(isBarycentricVaildSingleSIMD(bStart))) {
-			__m128i bRight = bStart;
-			__m128i bLeft = bStart;
-			//some thin triangles don't have a valid pixel, because of undersampling, only search in radius of extent
-			for (int xOffset = 1; xOffset < xExtent; xOffset++) {
-				//check right
-				bRight = _mm_add_epi32(bRight, edgesY);
-				if (isBarycentricVaildSingleSIMD(bRight) && startPoint.x + xOffset <= bbMax.x) {
-					startPoint.x += xOffset;
-					bStart = bRight;
-					break;
-				}
-				//check left
-				bLeft = _mm_sub_epi32(bLeft, edgesY);
-				if (isBarycentricVaildSingleSIMD(bLeft) && startPoint.x - xOffset >= bbMin.x) {
-					startPoint.x -= xOffset;
-					bStart = bLeft;
-					break;
+			const int edgesYTemp[3] = { edgeVectors[2].y, edgeVectors[0].y, edgeVectors[1].y };
+			int sign = 0;
+			int maxRequiredSteps = 0;
+			for (int i = 0; i < 3; i++) {
+				//need to make positive barycentric values negative
+				if (bStart_arr[i] > 0) {
+					if (edgesYTemp[i] >= 0) {
+						sign = -1;
+						int requiredSteps = bStart_arr[i] / edgesYTemp[i];
+						if (bStart_arr[i] % edgesYTemp[i] != 0) requiredSteps++;
+						maxRequiredSteps = std::max(maxRequiredSteps, abs(requiredSteps));
+					}
+					else {
+						sign = 1;
+						int requiredSteps = bStart_arr[i] / -edgesYTemp[i];
+						if (bStart_arr[i] % edgesYTemp[i] != 0) requiredSteps++;
+						maxRequiredSteps = std::max(maxRequiredSteps, abs(requiredSteps));
+					}
 				}
 			}
+			int offset = maxRequiredSteps * sign;
+			int newX = startPoint.x + offset;
+
+			__m128i bNew = _mm_add_epi32(bStart, _mm_mullo_epi32(edgesY, _mm_set1_epi32(offset)));
+
+			if (newX >= bbMin.x && newX <= bbMax.x && isBarycentricVaildSingleSIMD(bNew)) {
+				startPoint.x = newX;
+				bStart = bNew;
+			}			
 		}
 
 		//set point to start point
