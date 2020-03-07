@@ -165,14 +165,12 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 				if (bStart_arr[i] > 0) {
 					if (edgesYTemp[i] >= 0) {
 						sign = -1;
-						int requiredSteps = bStart_arr[i] / edgesYTemp[i];
-						if (bStart_arr[i] % edgesYTemp[i] != 0) requiredSteps++;
+						int requiredSteps = (int)std::ceil((float)bStart_arr[i] / (float)edgesYTemp[i]);
 						maxRequiredSteps = std::max(maxRequiredSteps, abs(requiredSteps));
 					}
 					else {
 						sign = 1;
-						int requiredSteps = bStart_arr[i] / -edgesYTemp[i];
-						if (bStart_arr[i] % edgesYTemp[i] != 0) requiredSteps++;
+						int requiredSteps = (int)std::ceil((float)bStart_arr[i] / (float)-edgesYTemp[i]);
 						maxRequiredSteps = std::max(maxRequiredSteps, abs(requiredSteps));
 					}
 				}
