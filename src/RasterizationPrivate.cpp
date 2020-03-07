@@ -130,12 +130,13 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 	if (area >= 0.f) {
 		return;
 	}
+	__m128 areaReg = _mm_set1_ps(area);
 
 	__m128i edge0Y = _mm_set1_epi32(edgeVectors[0].y);
 	__m128i edge1Y = _mm_set1_epi32(edgeVectors[1].y);
 	__m128i edge2Y = _mm_set1_epi32(edgeVectors[2].y);
 
-	//all edges in one register, used for search
+	//all edges in one register
 	__m128i edgesX = _mm_setr_epi32(edgeVectors[2].x, edgeVectors[0].x, edgeVectors[1].x, 0);
 	__m128i edgesY = _mm_setr_epi32(edgeVectors[2].y, edgeVectors[0].y, edgeVectors[1].y, 0);
 
@@ -147,13 +148,14 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 	startPoint.x = std::max(bbMin.x, std::min(startPoint.y, bbMax.x));
 	startPoint.y = std::min(startPoint.y, bbMax.y);
 
+	//initial barycentric coordinates
 	union { __m128i bStart; int bStart_arr[4]; };
 	bStart_arr[1] = edgeFunction(v0, edgeVectors[0], startPoint);
 	bStart_arr[2] = edgeFunction(v1, edgeVectors[1], startPoint);
 	bStart_arr[0] = edgeFunction(v2, edgeVectors[2], startPoint);
 
 	int minY = std::max(bbMin.y, std::min(std::min(v0.y, v1.y), v2.y));
-	for (int y = startPoint.y; y >= minY; y--) {
+	for (startPoint.y = startPoint.y; startPoint.y >= minY; startPoint.y--) {
 		//if we landed on a invalid point we left the triangle
 		//compute new point
 		if (!(isBarycentricVaildSingleSIMD(bStart))) {
@@ -183,12 +185,10 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 			if (newX >= bbMin.x && newX <= bbMax.x && isBarycentricVaildSingleSIMD(bNew)) {
 				startPoint.x = newX;
 				bStart = bNew;
-			}			
+			}
 		}
 
-		//set point to start point
-		cml::ivec2 p = startPoint;
-
+		//process four pixels at a time using SIMD
 		union { __m128i bX; int bXArr[4]; };
 		union { __m128i bY; int bYArr[4]; };
 		union { __m128i bZ; int bZArr[4]; };
@@ -208,26 +208,21 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 		__m128i edge1Y_x4 = _mm_mullo_epi32(edge1Y, four);
 		__m128i edge2Y_x4 = _mm_mullo_epi32(edge2Y, four);
 
+		union { __m128i xCo; int xCo_arr[4]; };
+		xCo = _mm_add_epi32(_mm_set1_epi32(startPoint.x), lane);
+
 		//go right
 		bool inTriangle = true;
 		while (inTriangle) {
 
-			union { __m128i xCo; int xCo_arr[4]; };
-			xCo = _mm_add_epi32(_mm_set1_epi32(p.x), lane);
-
-			inTriangle = writeFragments(bX, bY, bZ, p.y, xCo_arr, area, settings, target, t, bbMin, bbMax, xCo);
+			inTriangle = writeFragments(bX, bY, bZ, startPoint.y, xCo_arr, areaReg, settings, target, t, bbMin, bbMax, xCo);
 
 			bY = _mm_add_epi32(bY, edge0Y_x4);
 			bZ = _mm_add_epi32(bZ, edge1Y_x4);
 			bX = _mm_add_epi32(bX, edge2Y_x4);
-
-			p.x += 4;
+			xCo = _mm_add_epi32(xCo, four);
 		}
-		//set point to start point
-		p = startPoint;
 		//already checked start point
-		p.x--;
-
 		bY = _mm_set1_epi32(bStart_arr[1] - edgeVectors[0].y);
 		bZ = _mm_set1_epi32(bStart_arr[2] - edgeVectors[1].y);
 		bX = _mm_set1_epi32(bStart_arr[0] - edgeVectors[2].y);
@@ -236,40 +231,34 @@ void rasterizeTriangleInBoundingBox(RenderTarget& target, const RenderSettings& 
 		bZ = _mm_sub_epi32(bZ, _mm_mullo_epi32(edge1Y, lane));
 		bX = _mm_sub_epi32(bX, _mm_mullo_epi32(edge2Y, lane));
 
+		xCo = _mm_sub_epi32(_mm_set1_epi32(startPoint.x - 1), lane);
+
 		//go left
 		inTriangle = true;
 		while (inTriangle) {
 
-			union { __m128i xCo; int xCo_arr[4]; };
-			xCo = _mm_sub_epi32(_mm_set1_epi32(p.x), lane);
-
-			inTriangle = writeFragments(bX, bY, bZ, p.y, xCo_arr, area, settings, target, t, bbMin, bbMax, xCo);
+			inTriangle = writeFragments(bX, bY, bZ, startPoint.y, xCo_arr, areaReg, settings, target, t, bbMin, bbMax, xCo);
 
 			bY = _mm_sub_epi32(bY, edge0Y_x4);
 			bZ = _mm_sub_epi32(bZ, edge1Y_x4);
 			bX = _mm_sub_epi32(bX, edge2Y_x4);
-
-			p.x -= 4;
+			xCo = _mm_sub_epi32(xCo, four);
 		}
-
-		//decrement start point y
-		startPoint.y--;
 		//adjust start point barycentric
 		bStart = _mm_add_epi32(bStart, edgesX);
 	}
 }
 
-bool writeFragments(__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], float area, const RenderSettings& settings, RenderTarget& target,
+bool writeFragments(__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], __m128 area, const RenderSettings& settings, RenderTarget& target,
 	const Triangle& t, const cml::ivec2 bbMin, const cml::ivec2 bbMax, __m128i xCo) {
 
 	union { __m128 bNormalizedX; float bNormalizedXArr[4]; };
 	union { __m128 bNormalizedY; float bNormalizedYArr[4]; };
 	union { __m128 bNormalizedZ; float bNormalizedZArr[4]; };
 
-	__m128 areaReg = _mm_set1_ps(area);
-	bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), areaReg);
-	bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), areaReg);
-	bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), areaReg);
+	bNormalizedX = _mm_div_ps(_mm_cvtepi32_ps(bX), area);
+	bNormalizedY = _mm_div_ps(_mm_cvtepi32_ps(bY), area);
+	bNormalizedZ = _mm_div_ps(_mm_cvtepi32_ps(bZ), area);
 
 	InterpolationResult v = interpolateVertexDataSIMD(t, bNormalizedX, bNormalizedY, bNormalizedZ);
 	ColorSIMD colors = settings.shadingFunction(v, settings.shaderInput);

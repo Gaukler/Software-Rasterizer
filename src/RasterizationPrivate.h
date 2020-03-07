@@ -25,7 +25,7 @@ __m128i isBarycentricValidMultipleSIMD(const __m128i& x, const __m128i& y, const
 
 //writes four pixels using SIMD register inputs
 //returns true if all pixels were in triangle
-bool writeFragments(__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], float area, const RenderSettings& settings, RenderTarget& target,
+bool writeFragments(__m128i& bX, __m128i& bY, __m128i& bZ, int y, int xCo_arr[4], __m128 area, const RenderSettings& settings, RenderTarget& target,
 	const Triangle& t, const cml::ivec2 bbMin, const cml::ivec2 bbMax, __m128i xCo);
 
 cml::ivec2 coordinateNDCtoRaster(const cml::vec3& p, const uint32_t& width, const uint32_t& height);
