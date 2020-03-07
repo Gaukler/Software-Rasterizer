@@ -1,7 +1,7 @@
 # Software-Rasterizer
 
 C++ Sofware Rasterizer using only standard libraries.  
-Reads a single .obj model and a TGA image and writes the rendered image to a file.  
+Reads a single OBJ model and a TGA image texture and writes the rendered image to a file.  
 Loading of both file formats is rudimentary and only basic formats are supported.  
 Apart from rasterization the rest of the Pipeline is implemented in a straighforward and unoptimized way. The math library is barebones and only implements what is needed.    
 Rasterization is multithreaded by splitting the image into tiles, which are assigned to threads.  
@@ -15,7 +15,7 @@ SIMD instructions are used to process four pixels at a time.
 Only tested on Windows. As only standard libraries are used the code should work on any C++ 17 compiler out of the box.  
 Precompiled headers are setup to work with Visual Studio.  
 
-The application relies on a "resources" folder. It has to contain the specified model and texture. The resulting image is written into the resource folder too. The folder is searched along the path of the working directory.  
+The application relies on a "resources" folder. It has to contain the specified model and texture. The resulting image is written into the resource folder. The folder is searched along the path of the working directory.  
 
 Links to used [model](https://github.com/ssloy/tinyrenderer/blob/f6fecb7ad493264ecd15e230411bfb1cca539a12/obj/african_head.obj) and [texture](https://github.com/ssloy/tinyrenderer/raw/master/obj/african_head/african_head_diffuse.tga)  
 
