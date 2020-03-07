@@ -51,5 +51,10 @@ int main() {
 	const std::filesystem::path resultPath = resourcePath / resultFileName;
 	TGATools::writeTGAImage(tgaImage, resultPath.string());
 
+	//cleanup
+	delete textureSource;
+	delete texture;
+	delete mesh;
+
 	return 0;
 }
