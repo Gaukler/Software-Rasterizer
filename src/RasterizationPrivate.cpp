@@ -52,6 +52,9 @@ void rasterize(const std::vector<Triangle>& triangles, RenderTarget& target, con
 		triangleBB.max.x += triangleBB.max.x % tileSize.x;
 		triangleBB.max.y += triangleBB.max.y % tileSize.y;
 
+		triangleBB.max.x = std::min(triangleBB.max.x, (int)target.getWidth());
+		triangleBB.max.y = std::min(triangleBB.max.y, (int)target.getHeight());
+
 		//write indices to tiles
 		for (int x = triangleBB.min.x; x < triangleBB.max.x; x += tileSize.x) {
 			for (int y = triangleBB.min.y; y < triangleBB.max.y; y += tileSize.y) {
