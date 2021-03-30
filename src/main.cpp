@@ -20,11 +20,11 @@ int main() {
 
 	const std::filesystem::path resourcePath = DirectoryUtils::searchResourceDirectory();
 
-	const std::string modelName = "african_head.obj";
+	const std::string modelName = "Ukulele_01.obj";
 	const std::filesystem::path modelPath = resourcePath / modelName;
 	const Mesh* mesh = objLoader::loadOBJ(modelPath.string());
 
-	const std::string textureName = "african_head_diffuse.tga";
+	const std::string textureName = "Ukulele_01_8-bit_Diffuse.tga";
 	const std::filesystem::path texturePath = resourcePath / textureName;
 	TGATools::TGAImage* textureSource = TGATools::loadTGAFile(texturePath.string());
 	RGBImage* texture = TGATools::TGAtoRGBimage(textureSource);
@@ -33,7 +33,7 @@ int main() {
 	const float fovY = 40.f;
 	const float aspectRatio = (float)width / (float)height;
 	const cml::mat4x4 projectionMatrix = cml::projectionMatrix(1.f, 20.f, cml::radian(fovY), aspectRatio);
-	const cml::mat4x4 viewMatrix = cml::viewMatrixLookAt(cml::vec3(1.f, 1.f, 3.f), cml::vec3(0.f));
+	const cml::mat4x4 viewMatrix = cml::viewMatrixLookAt(cml::vec3(2.f, 1.f, 3.f), cml::vec3(0.f));
 
 	const ShaderInput shaderInput(texture, lightPosition, projectionMatrix, viewMatrix);
 	const RenderSettings settings(ShadingFunctions::texturedLit, VertexFunctions::viewProjection, shaderInput);
