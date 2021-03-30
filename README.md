@@ -8,16 +8,19 @@ Rasterization is multithreaded by splitting the image into tiles, which are assi
 The baryzentric coordinates are computed iteratively, as described in "A Parallel Algorithm for Polygon Rasterization".  
 SIMD instructions are used to process four pixels at a time.
 
-![](images/render.jpeg)
-![](images/renderNormal.jpeg)
+![](images/ukuleleRender.png)
+
+Ukulele model from [here](https://3dmodelhaven.com/model/?c=instrument&m=Ukulele_01).
+
+![](images/avocadoRender.png)
+
+Avocado model from [here](https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/Avocado).
 
 # Build instructions
 Only tested on Windows. As only standard libraries are used the code should work on any C++ 17 compiler out of the box.  
 Precompiled headers are setup to work with Visual Studio.  
 
 The application relies on a "resources" folder. It has to contain the specified model and texture. The resulting image is written into the resource folder. The folder is searched along the path of the working directory.  
-
-Links to used [model](https://github.com/ssloy/tinyrenderer/blob/f6fecb7ad493264ecd15e230411bfb1cca539a12/obj/african_head.obj) and [texture](https://github.com/ssloy/tinyrenderer/raw/master/obj/african_head/african_head_diffuse.tga)  
 
 # References
 https://github.com/ssloy/tinyrenderer/wiki/Lesson-0:-getting-started  
