@@ -17,10 +17,10 @@ Ukulele model from [here](https://3dmodelhaven.com/model/?c=instrument&m=Ukulele
 Avocado model from [here](https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/Avocado).
 
 # Build instructions
-Only tested on Windows. As only standard libraries are used the code should work on any C++ 17 compiler out of the box.  
+Developed and tested on Windows 10. As only standard libraries are used the code should work on any C++ 17 compiler out of the box.  
 Precompiled headers are setup to work with Visual Studio.  
 
-The application relies on a "resources" folder. It has to contain the specified model and texture. The resulting image is written into the resource folder. The folder is searched along the path of the working directory.  
+The asset paths to model and texture files are relative to a "resources" folder. This folder is searched along the path of the working directory. The resulting image is written into the resource folder.
 
 # References
 https://github.com/ssloy/tinyrenderer/wiki/Lesson-0:-getting-started  
